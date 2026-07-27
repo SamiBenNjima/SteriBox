@@ -1,0 +1,190 @@
+STERIBOX MASTER/SLAVE WIRING REFERENCE
+======================================
+
+═══════════════════════════════════════════════════════════════════════════════
+MASTER BOARD (ESP32-S DevKit) - GPIO PERIPHERALS
+═══════════════════════════════════════════════════════════════════════════════
+
+PIN MAP:
+--------
+GPIO 25  ──┬── Relay 1 module input (active LOW: pull to GND to ON)
+           │   Recommended: relay module with built-in flywheel diode
+           │   (e.g., 2-channel relay module SRD-05VDC)
+           │
+
+GPIO 26  ──┬── Relay 2 module input (active LOW: pull to GND to ON)
+           │   Same module as above, second channel
+           │
+
+GPIO 27  ──┬── Buzzer (+) pin
+           │   Recommend: 5V buzzer or active buzzer with series 1kΩ resistor
+           │   Connect (-) pin to GND
+           │
+
+GPIO 33  ──┬── DHT22 data pin (OneWire)
+           │   Requires: 10kΩ pullup resistor from data to 3.3V
+           │   Wire: 3.3V ─── DHT22[VCC]
+           │         GND  ─── DHT22[GND]
+           │         GPIO33 ─ DHT22[DATA] ──┬─ 10kΩ ──┬── 3.3V
+           │
+           
+GPIO 34  ──┬── Door/PIR sensor input (HIGH = open/motion)
+           │   Can be direct GPIO (input only) or through a pull-down
+           │   Simple door switch: door open → pulls GPIO 34 to 3.3V (or leave floating)
+           │   PIR sensor: 3.3V ─── PIR[VCC]
+           │              GND  ─── PIR[GND]
+           │              GPIO34 ─ PIR[OUT]
+           │
+
+GPIO 2   ──┬── Onboard LED (blinks on packet rx, for debug only)
+           │   Built into ESP32-S, no wiring needed
+           │
+
+GND      ──┬── Common ground (ALL grounds connected)
+           │
+3.3V     ──┬── Power for DHT22, PIR (if using 3.3V version)
+           │
+5V       ──┬── Power for relays, buzzer (if using 5V)
+           │
+
+SERIAL/UART:
+------------
+GPIO 16 (RX2)  ← receives from CrowPanel TX (GPIO 43)
+GPIO 17 (TX2)  → sends to CrowPanel RX (GPIO 44)
+
+
+═══════════════════════════════════════════════════════════════════════════════
+SLAVE BOARD (ESP32-S3 CrowPanel 5")
+═══════════════════════════════════════════════════════════════════════════════
+
+SERIAL (UART1) TO MASTER:
+-------------------------
+GPIO 44 (RX1)  ← receives from Master TX17
+GPIO 43 (TX1)  → sends to Master RX16
+
+All other GPIO are committed to the display RGB bus + touch, do NOT use them.
+
+
+═══════════════════════════════════════════════════════════════════════════════
+MASTER ↔ SLAVE UART WIRING (the critical link)
+═══════════════════════════════════════════════════════════════════════════════
+
+     MASTER (ESP32-S)          SLAVE (ESP32-S3 CrowPanel)
+     
+     GPIO 17 (TX2)  ───────────►  GPIO 44 (RX1)
+     
+     GPIO 16 (RX2)  ◄──────────  GPIO 43 (TX1)
+     
+     GND ───────────────────────  GND
+     
+Note: Do NOT connect VCC/3.3V of one board to the other (each has its own 
+      power supply and USB regulator).
+
+Baud: 115200, 8 data bits, no parity, 1 stop bit (8N1)
+
+Recommendation: Use short wires (< 30 cm), twisted pair or shielded cable
+                if the lab is electrically noisy.
+
+
+═══════════════════════════════════════════════════════════════════════════════
+RELAY MODULE DETAILS (assuming SRD-05VDC or similar)
+═══════════════════════════════════════════════════════════════════════════════
+
+Typical 2-channel relay module pinout:
+  [GND]  [VCC]  [CH1_IN]  [CH2_IN]     (input side, toward ESP32)
+  [GND]  [VCC]  [NO1]     [COM1]  [NC1]  (relay 1 contacts)
+           [NO2]     [COM2]  [NC2]       (relay 2 contacts)
+
+Wiring for SteriBox:
+  GPIO 25 (CH1_IN)  ── 1kΩ resistor ── Relay module CH1_IN  (active LOW)
+  GPIO 26 (CH2_IN)  ── 1kΩ resistor ── Relay module CH2_IN  (active LOW)
+  
+  Relay module VCC  ── +5V supply
+  Relay module GND  ── common GND
+  
+  Each relay's NO (normally open) contact:
+    COM ── [UV lamp ballast positive]
+    NO  ── [power supply +24V or whatever]
+    
+  When GPIO pulled LOW → relay energizes → UV lamp ON
+  When GPIO pulled HIGH → relay de-energizes → UV lamp OFF
+
+
+═══════════════════════════════════════════════════════════════════════════════
+DHT22 WIRING (temperature + humidity)
+═══════════════════════════════════════════════════════════════════════════════
+
+DHT22 pinout (usually): [1=VCC] [2=DATA] [3=GND] [4=NC]
+
+Wire to ESP32-S GPIO 33:
+  DHT22[1] VCC   ── +3.3V supply
+  DHT22[2] DATA  ── GPIO 33 ──┬─ 10kΩ resistor ──┬─ +3.3V
+  DHT22[3] GND   ── common GND
+
+Note: Pullup resistor is REQUIRED for OneWire protocol.
+      Without it, DHT22 won't work or will fail frequently.
+
+
+═══════════════════════════════════════════════════════════════════════════════
+DOOR/PIR SENSOR WIRING
+═══════════════════════════════════════════════════════════════════════════════
+
+Option A - Simple door switch (normally open):
+  Switch[A] ── GPIO 34 ──┬─ 10kΩ ──┬── +3.3V
+  Switch[B] ── GND
+
+  Open door → GPIO 34 = HIGH
+  Closed door → GPIO 34 = LOW
+
+
+Option B - PIR motion sensor (e.g., HC-SR501):
+  PIR[VCC]   ── +3.3V supply
+  PIR[GND]   ── common GND
+  PIR[OUT]   ── GPIO 34
+
+  Motion detected → PIR[OUT] = HIGH → GPIO 34 = HIGH
+  No motion → PIR[OUT] = LOW → GPIO 34 = LOW
+
+
+═══════════════════════════════════════════════════════════════════════════════
+BUZZER WIRING
+═══════════════════════════════════════════════════════════════════════════════
+
+Simple piezo buzzer (passive, needs PWM to sound):
+  Buzzer[+] ── GPIO 27  (via LEDC PWM at 2700 Hz)
+  Buzzer[-] ── GND
+
+If buzzer draws too much current (> 100mA), add a series 1kΩ resistor:
+  GPIO 27 ── 1kΩ ── Buzzer[+]
+               └─ Buzzer[-] ── GND
+
+Optional: 1µF capacitor across buzzer pins for filtering noise.
+
+
+═══════════════════════════════════════════════════════════════════════════════
+POWER SUPPLY CONSIDERATIONS
+═══════════════════════════════════════════════════════════════════════════════
+
+ESP32-S (Master):
+  - Powered via USB (5V) or external power supply
+  - Onboard LDO regulates to 3.3V for GPIO logic
+  - GPIO 25/26 can sink ~40mA each (relay modules typically use ~65mA @ 5V)
+    → Use relay module's VCC = 5V from external supply, NOT from ESP32 3.3V
+
+ESP32-S3 CrowPanel (Slave):
+  - Powered via USB-C (5V) or external power supply
+  - The RGB display bus consumes most of the power
+  - DO NOT power the entire sterilizer from the board's USB; get a separate
+    5V PSU or connect both boards to the same lab PSU.
+
+Relay coils (@ 5V, typical):
+  - Single relay: ~65 mA
+  - Two relays energized: ~130 mA
+  - → Use external 5V PSU capable of ≥ 1A (or 2A for headroom)
+
+GND tying:
+  - All GND pins must be connected to a common rail
+  - Master GND → Slave GND (through UART wiring)
+  - Relay module GND → common GND
+  - DHT22 GND → common GND
+  - PIR GND → common GND

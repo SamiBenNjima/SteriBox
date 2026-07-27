@@ -1,0 +1,201 @@
+/**
+ * @file steribox_hal_esp32.cpp
+ * SteriBox HAL - Elecrow CrowPanel 5.0" (ESP32-S3, 4MB flash) implementation.
+ *
+ * !!! REFERENCE IMPLEMENTATION - adjust the pin map to your wiring !!!
+ * On the CrowPanel most GPIOs drive the RGB LCD; free pins are on the
+ * UART/GPIO headers (check your board revision silk / schematic).
+ *
+ * Excluded from the PC simulator build (it compiles steribox_hal_sim.c
+ * instead). The Arduino IDE picks this file up automatically.
+ *
+ * Libraries needed (Library Manager):
+ *   - "DHT sensor library" (Adafruit) + Adafruit Unified Sensor
+ *
+ * NOTE for the .ino sketch:
+ *   #include "ui.h"
+ *   #include "steribox_app.h"
+ *   void setup() {
+ *       ... panel + LVGL init (Elecrow demo code) ...
+ *       sbx_hal_init();
+ *       ui_init();
+ *       steribox_app_init();
+ *   }
+ *   void loop() { lv_timer_handler(); delay(5); }
+ */
+#if defined(ARDUINO) && !defined(STERIBOX_SIMULATOR)
+
+#include "steribox_hal.h"
+
+#include <Arduino.h>
+#include <Preferences.h>
+#include <DHT.h>
+#include <sys/time.h>
+
+/*------------------------------------------------
+ * Pin map - ADJUST TO YOUR WIRING
+ *-----------------------------------------------*/
+#define PIN_RELAY_LAMP1   38   /*relay module IN1 (UV ballast 1)*/
+#define PIN_RELAY_LAMP2   37   /*relay module IN2 (UV ballast 2)*/
+#define PIN_BUZZER        18   /*piezo buzzer (PWM capable)*/
+#define PIN_PIR_DOOR      17   /*PIR / door sensor, HIGH = open*/
+#define PIN_DHT           21   /*DHT22 data*/
+#define DHT_TYPE          DHT22
+
+#define RELAY_ACTIVE_HIGH 1    /*set 0 for active-low relay boards*/
+
+static DHT dht(PIN_DHT, DHT_TYPE);
+static Preferences prefs;
+static bool relay_state[2];
+
+void sbx_hal_init(void)
+{
+    pinMode(PIN_RELAY_LAMP1, OUTPUT);
+    pinMode(PIN_RELAY_LAMP2, OUTPUT);
+    pinMode(PIN_BUZZER, OUTPUT);
+    pinMode(PIN_PIR_DOOR, INPUT);
+
+    sbx_hal_relay_set(SBX_RELAY_LAMP1, false);
+    sbx_hal_relay_set(SBX_RELAY_LAMP2, false);
+
+    dht.begin();
+    prefs.begin("steribox", false);
+}
+
+uint32_t sbx_hal_millis(void) { return millis(); }
+
+/*------------------------------------------------
+ * Relays
+ *-----------------------------------------------*/
+void sbx_hal_relay_set(sbx_relay_t relay, bool on)
+{
+    relay_state[relay] = on;
+    uint8_t pin = (relay == SBX_RELAY_LAMP1) ? PIN_RELAY_LAMP1 : PIN_RELAY_LAMP2;
+#if RELAY_ACTIVE_HIGH
+    digitalWrite(pin, on ? HIGH : LOW);
+#else
+    digitalWrite(pin, on ? LOW : HIGH);
+#endif
+}
+
+bool sbx_hal_relay_get(sbx_relay_t relay) { return relay_state[relay]; }
+
+/*------------------------------------------------
+ * Buzzer (blocking is fine: patterns are short)
+ *-----------------------------------------------*/
+static void beep(uint16_t freq, uint16_t ms)
+{
+    tone(PIN_BUZZER, freq, ms);
+    delay(ms + 30);
+}
+
+void sbx_hal_buzzer(sbx_beep_t pattern)
+{
+    switch(pattern) {
+        case SBX_BEEP_KEY:   beep(3000, 30); break;
+        case SBX_BEEP_OK:    beep(2500, 80);  beep(3200, 80); break;
+        case SBX_BEEP_WARN:  beep(500, 400); break;
+        case SBX_BEEP_DONE:  beep(2500, 120); beep(2500, 120); beep(3200, 250); break;
+        case SBX_BEEP_ALARM: for(int i = 0; i < 5; i++) beep(1000, 150); break;
+    }
+}
+
+/*------------------------------------------------
+ * Door sensor (PIR)
+ *-----------------------------------------------*/
+bool sbx_hal_door_is_open(void)
+{
+    return digitalRead(PIN_PIR_DOOR) == HIGH;
+}
+
+/*------------------------------------------------
+ * Environment sensor (DHT22)
+ *-----------------------------------------------*/
+bool sbx_hal_read_env(float * temp_c, float * hum_pct)
+{
+    /*DHT22 max poll rate ~0.5 Hz: cache between reads*/
+    static uint32_t last_read;
+    static float t_cache = 25.0f, h_cache = 40.0f;
+
+    if(millis() - last_read > 2500) {
+        float t = dht.readTemperature();
+        float h = dht.readHumidity();
+        if(!isnan(t)) t_cache = t;
+        if(!isnan(h)) h_cache = h;
+        last_read = millis();
+    }
+    if(temp_c)  *temp_c  = t_cache;
+    if(hum_pct) *hum_pct = h_cache;
+    return true;
+}
+
+/*------------------------------------------------
+ * USB (mass storage / printer)
+ * TODO: implement with ESP32-S3 USB-OTG host (usb_host_msc /
+ * usb_host_printer). Stubbed until the USB stack is integrated.
+ *-----------------------------------------------*/
+bool sbx_hal_usb_present(void) { return false; }
+
+bool sbx_hal_usb_export(const char * filename, const char * text)
+{
+    (void)filename; (void)text;
+    return false;
+}
+
+bool sbx_hal_usb_print(const char * text)
+{
+    (void)text;
+    return false;
+}
+
+/*------------------------------------------------
+ * RTC (ESP32 internal, survives light sleep; add DS3231 for
+ * battery-backed timekeeping if required)
+ *-----------------------------------------------*/
+void sbx_hal_get_datetime(sbx_datetime_t * dt)
+{
+    time_t now = time(NULL);
+    struct tm tm_;
+    localtime_r(&now, &tm_);
+    dt->year   = tm_.tm_year + 1900;
+    dt->month  = tm_.tm_mon + 1;
+    dt->day    = tm_.tm_mday;
+    dt->hour   = tm_.tm_hour;
+    dt->minute = tm_.tm_min;
+}
+
+void sbx_hal_set_datetime(const sbx_datetime_t * dt)
+{
+    struct tm tm_ = {};
+    tm_.tm_year = dt->year - 1900;
+    tm_.tm_mon  = dt->month - 1;
+    tm_.tm_mday = dt->day;
+    tm_.tm_hour = dt->hour;
+    tm_.tm_min  = dt->minute;
+    struct timeval tv = { mktime(&tm_), 0 };
+    settimeofday(&tv, NULL);
+}
+
+/*------------------------------------------------
+ * Persistence (NVS via Preferences)
+ *-----------------------------------------------*/
+bool sbx_hal_storage_load(sbx_persist_t * data)
+{
+    size_t n = prefs.getBytes("persist", data, sizeof(*data));
+    return n == sizeof(*data) && data->magic == SBX_PERSIST_MAGIC;
+}
+
+bool sbx_hal_storage_save(const sbx_persist_t * data)
+{
+    return prefs.putBytes("persist", data, sizeof(*data)) == sizeof(*data);
+}
+
+/*------------------------------------------------
+ * Simulator hooks - no-ops on hardware
+ *-----------------------------------------------*/
+void sbx_hal_sim_toggle_door(void) {}
+void sbx_hal_sim_toggle_usb(void) {}
+void sbx_hal_sim_bump_temp(float d) { (void)d; }
+void sbx_hal_sim_bump_hum(float d)  { (void)d; }
+
+#endif /*ARDUINO && !STERIBOX_SIMULATOR*/
