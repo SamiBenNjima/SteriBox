@@ -23,13 +23,8 @@ Medical-grade UV sterilizer controller built on two ESP32 boards communicating o
 
 | Path | Description |
 |---|---|
-| `master/` | Simple demo sketch (UART ping-pong, no sensors) |
-| `slave/` | Simple demo sketch (UART reply, CrowPanel side) |
-| `UI-2/SteriBox_Master/` | **Production** ESP32-S master firmware |
-| `UI-2/UI/` | **Production** ESP32-S3 CrowPanel UI firmware (LVGL) |
-
-> Use the `UI-2/` sketches for a real deployment.  
-> The `master/` and `slave/` sketches are standalone communication demos only.
+| `UI-2/SteriBox_Master/` | ESP32-S master firmware (relays, DHT22, RTC, buzzer) |
+| `UI-2/UI/` | ESP32-S3 CrowPanel UI firmware (LVGL — Home / Config / Info screens) |
 
 ---
 
