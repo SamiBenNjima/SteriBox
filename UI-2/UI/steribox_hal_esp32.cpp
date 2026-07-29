@@ -265,8 +265,13 @@ void sbx_hal_init(void)
     /* ---- SD card (onboard SPI, same method as the proven SD_Test) ---- */
     SPI.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
     sd_ok = SD.begin(SD_CS);
-    if(sd_ok) { SD.mkdir("/steribox"); }
-    Serial.printf("[HAL] SD %s\n", sd_ok ? "mounted" : "FAILED");
+    if(sd_ok) {
+        SD.mkdir("/steribox");
+        Serial.printf("[SD] Card mounted OK — %llu MB free\n",
+                      (SD.totalBytes() - SD.usedBytes()) / (1024ULL * 1024ULL));
+    } else {
+        Serial.println("[SD] No SD card inserted (or mount FAILED) — logging disabled");
+    }
 
     /* ---- PCF8574T (NOT WIRED yet) : uncomment once the expander is on the bus
     Wire.beginTransmission(PCF8574_ADDR);
@@ -327,37 +332,66 @@ bool sbx_hal_read_env(float * t, float * h)
 }
 
 /*==================================================================
- * SD-card logging / export   (ACTIVE)
- *  usb_present  -> SD card mounted
- *  usb_export   -> write the report to /steribox/<filename> and append
- *                  a timestamped line to /steribox/history.log
+ * SD-card status & structured logging
  *=================================================================*/
-bool sbx_hal_usb_present(void) { return sd_ok; }
+bool sbx_hal_sd_present(void)  { return sd_ok; }
+bool sbx_hal_usb_present(void) { return sd_ok; }   /* alias */
 
-bool sbx_hal_usb_export(const char * filename, const char * text)
+/* ---- sbx_hal_log_event ------------------------------------------
+ * Appends ONE timestamped CSV row to /steribox/syslog.csv.
+ * Format: YYYY-MM-DD HH:MM:SS,<tag>,<detail>\n
+ * Silent no-op when no SD card is present.
+ *----------------------------------------------------------------*/
+bool sbx_hal_log_event(const char * tag, const char * detail)
 {
     if(!sd_ok) return false;
 
-    char path[64];
+    time_t now = time(NULL);
+    struct tm t;
+    localtime_r(&now, &t);
+
+    File f = SD.open("/steribox/syslog.csv", FILE_APPEND);
+    if(!f) return false;
+    f.printf("%04d-%02d-%02d %02d:%02d:%02d,%s,%s\n",
+             t.tm_year + 1900, t.tm_mon + 1, t.tm_mday,
+             t.tm_hour, t.tm_min, t.tm_sec,
+             tag, detail);
+    f.close();
+
+    Serial.printf("[LOG] %04d-%02d-%02d %02d:%02d:%02d | %-16s | %s\n",
+                  t.tm_year + 1900, t.tm_mon + 1, t.tm_mday,
+                  t.tm_hour, t.tm_min, t.tm_sec, tag, detail);
+    return true;
+}
+
+/* ---- sbx_hal_log_snapshot ---------------------------------------
+ * Write/overwrite <filename> under /steribox/, then call log_event
+ * so the snapshot is referenced in the main syslog.
+ *----------------------------------------------------------------*/
+bool sbx_hal_log_snapshot(const char * filename, const char * text)
+{
+    if(!sd_ok) return false;
+
+    char path[80];
     snprintf(path, sizeof(path), "/steribox/%s", filename);
     File f = SD.open(path, FILE_WRITE);
     if(!f) return false;
     f.print(text);
     f.close();
 
-    /* Append one line to the rolling history log with a system timestamp */
-    File log = SD.open("/steribox/history.log", FILE_APPEND);
-    if(log) {
-        time_t now = time(NULL);
-        struct tm t;
-        localtime_r(&now, &t);
-        char ts[24];
-        snprintf(ts, sizeof(ts), "%04d-%02d-%02d %02d:%02d",
-                 t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min);
-        log.printf("%s  saved %s\n", ts, filename);
-        log.close();
-    }
+    char detail[96];
+    snprintf(detail, sizeof(detail), "file=%s", filename);
+    sbx_hal_log_event("SNAPSHOT", detail);
     return true;
+}
+
+/* ---- sbx_hal_usb_export -----------------------------------------
+ * Legacy entry-point (used by the manual Export panel).
+ * Writes the file AND logs the save via syslog.
+ *----------------------------------------------------------------*/
+bool sbx_hal_usb_export(const char * filename, const char * text)
+{
+    return sbx_hal_log_snapshot(filename, text);
 }
 
 /*==================================================================

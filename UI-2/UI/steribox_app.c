@@ -239,10 +239,53 @@ static void info_screen_refresh(void)
 
 static void usb_icons_refresh(void)
 {
-    lv_opa_t opa = sbx_hal_usb_present() ? LV_OPA_COVER : LV_OPA_30;
+    /* --- USB icon: dim when no SD (same hardware slot) --- */
+    lv_opa_t opa = sbx_hal_sd_present() ? LV_OPA_COVER : LV_OPA_30;
     lv_obj_set_style_img_opa(ui_IMG_USB1, opa, 0);
     lv_obj_set_style_img_opa(ui_IMG_USB3, opa, 0);
     lv_obj_set_style_img_opa(ui_IMG_USB6, opa, 0);
+
+    /* --- SD-absent indicator: a small red label shown in each header
+     *     when no card is inserted.  Created once on first call,
+     *     shown/hidden every refresh cycle.
+     *     We create one label per screen header that already exists.
+     * ----------------------------------------------------------------*/
+    static lv_obj_t * sd_lbl_info   = NULL;
+    static lv_obj_t * sd_lbl_home   = NULL;
+    static lv_obj_t * sd_lbl_config = NULL;
+    static bool sd_was_present = true;   /* track transitions for serial msg */
+
+    bool sd_now = sbx_hal_sd_present();
+
+    /* Print one serial message on each transition */
+    if(sd_was_present && !sd_now) {
+        Serial.println("[SD] No SD card — logging disabled, icon shown");
+    }
+    sd_was_present = sd_now;
+
+    /* Helper: create the SD-absent label the first time it is needed */
+    #define SBX_MAKE_SD_LBL(var, parent) do { \
+        if(!(var) && (parent)) { \
+            (var) = lv_label_create(parent); \
+            lv_label_set_text((var), LV_SYMBOL_SD_CARD "!"); \
+            lv_obj_set_align((var), LV_ALIGN_TOP_RIGHT); \
+            lv_obj_set_pos((var), -80, 12); \
+            lv_obj_set_style_text_color((var), lv_color_hex(0xFF4040), 0); \
+            lv_obj_set_style_text_font((var),  &lv_font_montserrat_16, 0); \
+        } \
+    } while(0)
+
+    SBX_MAKE_SD_LBL(sd_lbl_info,   ui_Panel_Header1);
+    SBX_MAKE_SD_LBL(sd_lbl_home,   ui_Panel_Header3);
+    SBX_MAKE_SD_LBL(sd_lbl_config, ui_Panel_Header5);
+
+    #undef SBX_MAKE_SD_LBL
+
+    /* Show/hide based on card presence */
+    lv_opa_t sd_opa = sd_now ? LV_OPA_TRANSP : LV_OPA_COVER;
+    if(sd_lbl_info)   lv_obj_set_style_opa(sd_lbl_info,   sd_opa, 0);
+    if(sd_lbl_home)   lv_obj_set_style_opa(sd_lbl_home,   sd_opa, 0);
+    if(sd_lbl_config) lv_obj_set_style_opa(sd_lbl_config, sd_opa, 0);
 }
 
 /*--- Header clock: one RTC read feeds every screen's clock label --*/
@@ -338,6 +381,33 @@ static void cycle_stop(sbx_state_t end_state)
     }
 
     sbx_hal_storage_save(&persist);
+
+    /* ---- SD log: one row per cycle end ---- */
+    {
+        float t = 0.0f, h = 0.0f;
+        sbx_hal_read_env(&t, &h);
+        uint8_t lamps_active = 0;
+        if(lamp_remaining_h(persist.lamp1_seconds) > 0) lamps_active++;
+        if(lamp_remaining_h(persist.lamp2_seconds) > 0) lamps_active++;
+        float dose = uvc_dose_mj_cm2(cycle_elapsed_s, lamps_active);
+        uint32_t dur_min = cycle_total_s / 60u;
+        uint32_t dur_sec = cycle_total_s % 60u;
+        char detail[160];
+        snprintf(detail, sizeof(detail),
+                 "dur=%um%02us dose=%.1fmJ/cm2 lamps=%u/2 cycles=%u aborted=%u"
+                 " L1=%uh L2=%uh T=%dC RH=%d%%",
+                 (unsigned)dur_min, (unsigned)dur_sec,
+                 (double)dose, (unsigned)lamps_active,
+                 (unsigned)persist.cycles_done,
+                 (unsigned)persist.cycles_aborted,
+                 (unsigned)lamp_remaining_h(persist.lamp1_seconds),
+                 (unsigned)lamp_remaining_h(persist.lamp2_seconds),
+                 (int)(t + 0.5f), (int)(h + 0.5f));
+        sbx_hal_log_event(
+            (end_state == SBX_STATE_DONE) ? "CYCLE_DONE" : "CYCLE_ABORT",
+            detail);
+    }
+
     lv_obj_clear_state(ui_BTN_Pause_Top1, LV_STATE_CHECKED);
     lock_slider(false);
     state = end_state;
@@ -1168,11 +1238,13 @@ static void confirm_yes_cb(lv_event_t * e)
     if(lamp_to_reset == 1) {
         persist.lamp1_seconds = 0;
         sbx_hal_storage_save(&persist);
+        sbx_hal_log_event("CFG_LAMP_RESET", "lamp=1");
         sbx_hal_buzzer(SBX_BEEP_OK);
     }
     else if(lamp_to_reset == 2) {
         persist.lamp2_seconds = 0;
         sbx_hal_storage_save(&persist);
+        sbx_hal_log_event("CFG_LAMP_RESET", "lamp=2");
         sbx_hal_buzzer(SBX_BEEP_OK);
     }
     lamp_to_reset = 0;
@@ -1312,6 +1384,16 @@ void steribox_ev_save_config(void)
 
     sbx_hal_set_datetime(&dt);
     sbx_hal_storage_save(&persist);
+
+    /* ---- SD log: config change ---- */
+    {
+        char detail[48];
+        snprintf(detail, sizeof(detail), "set=%02u/%02u/%04u %02u:%02u",
+                 (unsigned)dt.day, (unsigned)dt.month, (unsigned)dt.year,
+                 (unsigned)dt.hour, (unsigned)dt.minute);
+        sbx_hal_log_event("CFG_DATETIME", detail);
+    }
+
     sbx_hal_buzzer(SBX_BEEP_OK);
 }
 
@@ -1431,4 +1513,18 @@ void steribox_app_init(void)
 
     /*Start on the Home screen (generated ui_init loads Info first)*/
     lv_disp_load_scr(ui_screenhome);
+
+    /* ---- BOOT marker in syslog ---- */
+    {
+        char detail[96];
+        snprintf(detail, sizeof(detail),
+                 "cycles=%u aborted=%u tot=%uh L1=%uh L2=%uh sd=%s",
+                 (unsigned)persist.cycles_done,
+                 (unsigned)persist.cycles_aborted,
+                 (unsigned)(persist.total_seconds / 3600u),
+                 (unsigned)lamp_remaining_h(persist.lamp1_seconds),
+                 (unsigned)lamp_remaining_h(persist.lamp2_seconds),
+                 sbx_hal_sd_present() ? "ok" : "absent");
+        sbx_hal_log_event("BOOT", detail);
+    }
 }

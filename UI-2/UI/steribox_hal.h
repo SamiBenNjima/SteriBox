@@ -97,11 +97,28 @@ bool sbx_hal_door_is_open(void);
 bool sbx_hal_read_env(float * temp_c, float * hum_pct);
 
 /*------------------------------------------------
- * USB port (mass storage drive or laser printer)
+ * SD card (onboard slot, SPI)
  *-----------------------------------------------*/
+/** Returns true while the SD card is mounted and accessible. */
+bool sbx_hal_sd_present(void);
+
+/** Alias kept for compatibility — maps to sbx_hal_sd_present(). */
 bool sbx_hal_usb_present(void);
-/** Write a text report to the USB drive. Returns false if no drive. */
+
+/** Write a text report to /steribox/<filename>. Returns false if no SD. */
 bool sbx_hal_usb_export(const char * filename, const char * text);
+
+/** Write/overwrite <filename> under /steribox/ and record in syslog. */
+bool sbx_hal_log_snapshot(const char * filename, const char * text);
+
+/** Append one timestamped CSV row to /steribox/syslog.csv.
+ *  Format: YYYY-MM-DD HH:MM:SS,<tag>,<detail>\n
+ *  Silent no-op when no SD card is present. */
+bool sbx_hal_log_event(const char * tag, const char * detail);
+
+/*------------------------------------------------
+ * Printer via CH376S (NOT WIRED yet — stub)
+ *-----------------------------------------------*/
 /** Send a text report to the attached printer. Returns false if absent. */
 bool sbx_hal_usb_print(const char * text);
 
