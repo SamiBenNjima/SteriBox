@@ -20,10 +20,12 @@ static uint32_t s_last_rx_ms   = 0;
 
 static uint8_t  rxBuf[sizeof(sbx_packet_t)];
 static uint8_t  rxIdx = 0;
+static bool     s_started = false;   /* false when the link is compiled out */
 
 void sbx_uart_init(void)
 {
     Serial1.begin(SBX_UART_BAUD, SERIAL_8N1, SLAVE_RX, SLAVE_TX);
+    s_started = true;
 }
 
 static void handle_packet(const sbx_packet_t *p)
@@ -47,6 +49,7 @@ static void handle_packet(const sbx_packet_t *p)
 
 void sbx_uart_task(void)
 {
+    if (!s_started) return;
     while (Serial1.available()) {
         uint8_t b = Serial1.read();
         if (rxIdx == 0 && b != SBX_HDR_MASTER) continue; /* resync on header */
@@ -62,6 +65,7 @@ void sbx_uart_task(void)
 
 static void send_packet(sbx_packet_t *p)
 {
+    if (!s_started) return;   /* link compiled out: never touch GPIO 43/44 */
     p->header   = SBX_HDR_SLAVE;
     p->checksum = sbx_checksum(p);
     Serial1.write((uint8_t*)p, sizeof(*p));

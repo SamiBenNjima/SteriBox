@@ -77,6 +77,8 @@ void my_touchpad_read(lv_indev_drv_t *indev_driver, lv_indev_data_t *data)
 void setup()
 {
   Serial.begin(115200);
+  delay(300);                       // let the USB-serial monitor attach
+  Serial.println("\n=== SteriBox boot ===");
 
   // 1. I/O expander (touch + power-up sequencing)
   Wire.begin(19, 20);
@@ -88,6 +90,10 @@ void setup()
   Out.setState(IO0, IO_HIGH);   // stable power
   delay(100);
   Out.setMode(IO1, IO_INPUT);
+
+  // 1b. SteriBox: RTC *must* be read here, while Wire still owns GPIO 19/20.
+  //     tft.begin() below re-routes those pins to the touch I2C peripheral.
+  sbx_hal_rtc_early_init();
 
   // 2. Screen power rail (GPIO 38 = ON for CrowPanel 5.0)
   pinMode(38, OUTPUT);

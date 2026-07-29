@@ -21,6 +21,10 @@ GPIO 27  ──┬── Buzzer (+) pin
            │   Connect (-) pin to GND
            │
 
+GPIO 32  ──┬── Cooling Fan signal (active HIGH: output HIGH when temp > 26°C)
+           │   Connect to fan relay/transistor driver circuit (+) input
+           │
+
 GPIO 33  ──┬── DHT22 data pin (OneWire)
            │   Requires: 10kΩ pullup resistor from data to 3.3V
            │   Wire: 3.3V ─── DHT22[VCC]

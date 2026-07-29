@@ -67,6 +67,11 @@ typedef struct {
 /*------------------------------------------------
  * Core
  *-----------------------------------------------*/
+/** I2C + DS3231 bring-up. MUST be called BEFORE tft.begin(): the display
+ *  driver re-routes SDA/SCL (GPIO19/20) to its own I2C peripheral for the
+ *  touch panel, after which Wire transactions on those pins can no longer
+ *  reach the RTC. Seeds the ESP32 system clock from the RTC. */
+void     sbx_hal_rtc_early_init(void);
 void     sbx_hal_init(void);
 uint32_t sbx_hal_millis(void);
 

@@ -23,6 +23,7 @@
 #define PIN_BUZZER   27
 #define PIN_DOOR     34   /* input-only pin, fine for a sensor */
 #define PIN_DHT      33
+#define PIN_FAN      32   /* output pin for cooling fan (HIGH = ON when temp > 26°C) */
 #define LED_PIN       2   /* onboard LED: blinks on each valid packet in */
 
 #define MASTER_RX    16
@@ -197,6 +198,10 @@ void setup() {
   pinMode(PIN_RELAY2, OUTPUT); 
   digitalWrite(PIN_RELAY2, HIGH);  // start OFF (not grounded)
   
+  // Cooling Fan: active HIGH (HIGH = ON when temp > 26°C)
+  pinMode(PIN_FAN, OUTPUT);
+  digitalWrite(PIN_FAN, LOW);   // start OFF
+
   pinMode(PIN_DOOR, INPUT);
 
   // Buzzer: LEDC PWM setup (channel 0, 2.7kHz, 10-bit resolution)
@@ -224,6 +229,7 @@ void setup() {
   Serial.println("[INIT] Hardware ready:");
   Serial.println("  Relay1 (25) = active LOW");
   Serial.println("  Relay2 (26) = active LOW");
+  Serial.println("  Fan (32)    = active HIGH (> 26°C)");
   Serial.println("  Buzzer (27) = LEDC PWM @ 2700 Hz");
   Serial.println("  Door/PIR (34) = input");
   Serial.println("  DHT22 (33) = OneWire");
@@ -255,6 +261,15 @@ void loop() {
       last_hum = h; 
       env_valid = true;
       Serial.printf("[DHT22] OK: %.1f°C, %.1f%% RH\n", t, h);
+
+      // Fan control: HIGH output on GPIO 32 when temp > 26°C
+      if (t > 26.0f) {
+        digitalWrite(PIN_FAN, HIGH);
+        Serial.println("  [FAN] ON (temp > 26.0°C -> HIGH pin 32)");
+      } else {
+        digitalWrite(PIN_FAN, LOW);
+        Serial.println("  [FAN] OFF (temp <= 26.0°C -> LOW pin 32)");
+      }
     } else {
       env_valid = false;
       Serial.println("[DHT22] FAIL (no data or CRC error)");
