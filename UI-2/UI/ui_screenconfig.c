@@ -286,12 +286,9 @@ void ui_screenconfig_screen_init(void)
                                LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_bg_opa(ui_screenconfig, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
 
-    /* ── Left nav sidebar image + active accent (CONFIG) ──────────── */
+    /* ── Left nav sidebar — programmatic icons + active accent (CONFIG = row 2) */
     ui_Image2 = NULL;
-    lv_obj_t * navImg = lv_img_create(ui_screenconfig);
-    lv_img_set_src(navImg, &ui_img_nav_bar);
-    lv_obj_set_pos(navImg, 0, 0);
-    sbx_nav_accent(ui_screenconfig, 2);
+    sbx_navbar_build(ui_screenconfig, 2);
 
     /* ── Header (rounded filled box) ──────────────────────────────── */
     ui_Panel_Header5 = lv_obj_create(ui_screenconfig);

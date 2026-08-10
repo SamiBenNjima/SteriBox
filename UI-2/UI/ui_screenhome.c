@@ -147,21 +147,10 @@ void ui_screenhome_screen_init(void)
     lv_obj_set_style_bg_opa(ui_screenhome, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
     ui_Image4 = NULL;
 
-    /* Left nav sidebar: single baked-in image + invisible touch zones */
-    ui_navBar = lv_obj_create(ui_screenhome);
-    lv_obj_remove_style_all(ui_navBar);
-    lv_obj_set_size(ui_navBar, 75, 480);
-    lv_obj_set_pos(ui_navBar, 0, 0);
-    lv_obj_clear_flag(ui_navBar, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);      /// Flags
+    /* Left nav sidebar — programmatic icons + active accent (HOME = row 0) */
+    ui_navBar = sbx_navbar_build(ui_screenhome, 0);
 
-    lv_obj_t * navImg = lv_img_create(ui_navBar);
-    lv_img_set_src(navImg, &ui_img_nav_bar);
-    lv_obj_set_pos(navImg, 0, 0);
-
-    /* Active-tab accent (cyan left edge) — HOME section */
-    sbx_nav_accent(ui_navBar, 0);
-
-    /* Invisible touch zones over the image (HOME / INFO / CONFIG) */
+    /* Invisible touch zones over the nav bar (HOME / INFO / CONFIG) */
     ui_BTN_Menu_Print_S4 = lv_obj_create(ui_navBar);
     lv_obj_remove_style_all(ui_BTN_Menu_Print_S4);
     lv_obj_set_size(ui_BTN_Menu_Print_S4, 75, 160);
@@ -179,6 +168,7 @@ void ui_screenhome_screen_init(void)
     lv_obj_set_size(ui_BTN_Menu_Move_S1, 75, 160);
     lv_obj_set_pos(ui_BTN_Menu_Move_S1, 0, 320);
     lv_obj_add_flag(ui_BTN_Menu_Move_S1, LV_OBJ_FLAG_CLICKABLE);
+
 
     ui_Panel_Header3 = lv_obj_create(ui_screenhome);
     lv_obj_set_width(ui_Panel_Header3, 712);

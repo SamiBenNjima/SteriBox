@@ -24,24 +24,15 @@ extern "C" {
 
 #include "ui_helpers.h"
 #include "ui_events.h"
+#include "sbx_navbar.h"
 
 ///////////////////// SHARED THEME ////////////////////
 #define SBX_COL_BG      0x121821   /* app background (blends with nav_bar) */
 #define SBX_COL_HEADER  0x1E2838   /* rounded header fill                  */
 #define SBX_COL_ACCENT  0x00D2FF   /* cyan accent                          */
 
-/* Cyan active-tab accent bar on the left edge of the nav sidebar.
-   section: 0 = HOME, 1 = INFO, 2 = CONFIG (each nav slot is 160 px tall). */
-static inline void sbx_nav_accent(lv_obj_t * navbar, int section)
-{
-    lv_obj_t * a = lv_obj_create(navbar);
-    lv_obj_remove_style_all(a);
-    lv_obj_set_size(a, 5, 92);
-    lv_obj_set_pos(a, 0, section * 160 + 34);
-    lv_obj_set_style_radius(a, 3, 0);
-    lv_obj_set_style_bg_color(a, lv_color_hex(SBX_COL_ACCENT), 0);
-    lv_obj_set_style_bg_opa(a, 255, 0);
-}
+/* Legacy stub — sbx_navbar_build() replaces this; kept so old call-sites compile. */
+static inline void sbx_nav_accent(lv_obj_t * navbar, int section) { (void)navbar; (void)section; }
 
 ///////////////////// SCREENS ////////////////////
 
@@ -83,7 +74,10 @@ LV_IMG_DECLARE(ui_img_btn_print_top_off_png);    // assets/btn_print_top_off.png
 LV_IMG_DECLARE(ui_img_arrow_right_png);    // assets/arrow_right.png
 
 // FONTS  (built-in Montserrat only: 16, 36, 48)
-LV_IMG_DECLARE(ui_img_nav_bar);   // left sidebar (replaces the full-screen bg)
+LV_IMG_DECLARE(ui_img_nav_bar);   // left sidebar — legacy, no longer drawn
+LV_IMG_DECLARE(ui_img_icn_home_png);    // nav icon: Home
+LV_IMG_DECLARE(ui_img_icn_info_png);    // nav icon: Info
+LV_IMG_DECLARE(ui_img_icn_config_png);  // nav icon: Config
 
 // UI INIT
 void ui_init(void);

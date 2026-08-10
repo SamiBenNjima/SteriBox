@@ -83,11 +83,8 @@ void ui_screeninfo_screen_init(void)
 
     ui_Image5 = NULL;
 
-    /* Left nav sidebar image + active accent (INFO) */
-    lv_obj_t * navImg = lv_img_create(ui_screeninfo);
-    lv_img_set_src(navImg, &ui_img_nav_bar);
-    lv_obj_set_pos(navImg, 0, 0);
-    sbx_nav_accent(ui_screeninfo, 1);
+    /* Left nav sidebar — programmatic icons + active accent (INFO = row 1) */
+    sbx_navbar_build(ui_screeninfo, 1);
 
     ui_Panel_Header1 = lv_obj_create(ui_screeninfo);
     lv_obj_set_width(ui_Panel_Header1, 712);
