@@ -52,16 +52,16 @@
 #define RTC_ADDR  0x68
 
 /* ---- LEDC (buzzer PWM) ---- */
-/* Arduino-ESP32 ≥ 3.x uses ledcAttach() / ledcWriteTone().
- * For older 2.x boards package uncomment the #define below:
- * #define SBX_LEDC_LEGACY   */
+/* Arduino-ESP32 2.x uses ledcSetup / ledcAttachPin. 
+ * Arduino-ESP32 3.x uses ledcAttachChannel / ledcAttach. */
+#define SBX_LEDC_LEGACY   /* Enable for ESP32 Arduino Core 2.x */
 #define BUZZER_CHANNEL   0
 #define BUZZER_FREQ_HZ   2700
 
 /* ---- USB-OTG host switch ---- */
-/* Requires Arduino-ESP32 >= 3.0 and the TinyUSB stack.
- * In Arduino IDE: Tools -> USB Mode -> "TinyUSB"                    */
-#define SBX_USB_OTG_ENABLED  1
+/* Set to 1 if using USB Host (requires ESP32 core 3.x with TinyUSB mode enabled,
+ * or Adafruit_TinyUSB library). Set to 0 if compiled under core 2.x.        */
+#define SBX_USB_OTG_ENABLED  0
 
 /* ------------------------------------------------------------------ */
 #include <Arduino.h>
@@ -73,10 +73,12 @@
 #include "sbx_uart_protocol.h"
 
 #if SBX_USB_OTG_ENABLED
-/* TinyUSB host — requires ESP32 Arduino core ≥ 3.0 with TinyUSB selected
- * in Tools → USB Mode → "TinyUSB" and a USB Host shield / MAX3421E.      */
-// #include <Adafruit_TinyUSB.h>
-// TODO: full USB-Host MSC / CDC implementation in follow-up sprint.
+#include <Adafruit_TinyUSB.h>
+USBHostCDC printer_cdc;
+static bool s_printer_online = false;
+#else
+/* Fallback stubs when USB OTG stack is disabled */
+static bool s_printer_online = false;
 #endif
 
 DHT dht(PIN_DHT, DHT22);
@@ -104,7 +106,7 @@ static void buzzer_init(void)
     ledcAttachPin(PIN_BUZZER, BUZZER_CHANNEL);
     ledcWriteTone(BUZZER_CHANNEL, 0);
 #else
-    /* Arduino-ESP32 3.x: ledcAttach replaces ledcSetup + ledcAttachPin */
+    /* Arduino-ESP32 3.x: ledcAttachChannel or ledcAttach */
     ledcAttachChannel(PIN_BUZZER, BUZZER_FREQ_HZ, 10, BUZZER_CHANNEL);
     ledcWriteTone(PIN_BUZZER, 0);
 #endif
