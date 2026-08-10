@@ -28,6 +28,7 @@ bool sbx_uart_is_linked(void);        /* true if telemetry seen in last 2s */
 bool sbx_uart_get_door_open(void);
 bool sbx_uart_get_relay(uint8_t relay_id);
 bool sbx_uart_get_env(float *temp_c, float *hum_pct); /* false if never valid */
+bool sbx_uart_get_printer_present(void); /* true if USB-OTG printer on master */
 
 #ifdef __cplusplus
 }

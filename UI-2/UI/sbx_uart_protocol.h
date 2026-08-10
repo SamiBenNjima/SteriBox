@@ -32,6 +32,7 @@ enum {
     SBX_CMD_SET_RELAY   = 0x01,  /* data0=relay id (0/1), data1=on (0/1) */
     SBX_CMD_SET_BUZZER  = 0x02,  /* data0=pattern (sbx_beep_t)           */
     SBX_CMD_PING        = 0x03,
+    SBX_CMD_PRINT       = 0x04,  /* data0..3=4 chars of text; zero-payload=end */
 
     /* master -> slave (telemetry/replies) */
     SBX_MSG_TELEMETRY   = 0x10,  /* data0=flags, data1..2=temp*10 (i16 LE), data3=hum% */
@@ -39,10 +40,11 @@ enum {
 };
 
 /* telemetry flags bitfield (data[0]) */
-#define SBX_FLAG_DOOR_OPEN    (1 << 0)
-#define SBX_FLAG_RELAY1_ON    (1 << 1)
-#define SBX_FLAG_RELAY2_ON    (1 << 2)
-#define SBX_FLAG_ENV_VALID    (1 << 3)  /* DHT22 read OK this cycle */
+#define SBX_FLAG_DOOR_OPEN      (1 << 0)
+#define SBX_FLAG_RELAY1_ON      (1 << 1)
+#define SBX_FLAG_RELAY2_ON      (1 << 2)
+#define SBX_FLAG_ENV_VALID      (1 << 3)  /* DHT22 read OK this cycle */
+#define SBX_FLAG_PRINTER_READY  (1 << 4)  /* USB-OTG printer detected */
 
 typedef struct __attribute__((packed)) {
     uint8_t header;     /* SBX_HDR_MASTER or SBX_HDR_SLAVE */

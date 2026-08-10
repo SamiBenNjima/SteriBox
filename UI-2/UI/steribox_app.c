@@ -19,6 +19,7 @@
 #include "ui.h"
 #include "steribox_app.h"
 #include "steribox_hal.h"
+#include "sbx_topbar.h"
 
 /*==================================================================
  * Configuration
@@ -286,6 +287,15 @@ static void usb_icons_refresh(void)
     if(sd_lbl_info)   lv_obj_set_style_opa(sd_lbl_info,   sd_opa, 0);
     if(sd_lbl_home)   lv_obj_set_style_opa(sd_lbl_home,   sd_opa, 0);
     if(sd_lbl_config) lv_obj_set_style_opa(sd_lbl_config, sd_opa, 0);
+
+    /* --- Refresh right-side icon group on every visible screen --- */
+    /* ui_topbar_icons_* are declared in the respective screen files  */
+    extern sbx_topbar_icons_t ui_topbar_icons_home;
+    extern sbx_topbar_icons_t ui_topbar_icons_info;
+    extern sbx_topbar_icons_t ui_topbar_icons_cfg;
+    sbx_topbar_refresh(&ui_topbar_icons_home);
+    sbx_topbar_refresh(&ui_topbar_icons_info);
+    sbx_topbar_refresh(&ui_topbar_icons_cfg);
 }
 
 /*--- Header clock: one RTC read feeds every screen's clock label --*/
@@ -655,6 +665,21 @@ static void print_btn_cb(lv_event_t * e)
     char report[640];
     build_report(report, sizeof(report), NULL);
     sbx_hal_buzzer(sbx_hal_usb_print(report) ? SBX_BEEP_OK : SBX_BEEP_WARN);
+}
+
+/* Public guarded callbacks registered in ui_screeninfo.c --------------
+ * These replace the old unguarded wiring and show an error popup when
+ * the required device is not connected.                              */
+void sbx_info_export_cb(lv_event_t * e)
+{
+    if(lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+    sbx_try_export();
+}
+
+void sbx_info_print_cb(lv_event_t * e)
+{
+    if(lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+    sbx_try_print();
 }
 
 /*==================================================================

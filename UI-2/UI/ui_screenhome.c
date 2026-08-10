@@ -10,6 +10,7 @@
 // All public widget handles used by steribox_app.c are preserved.
 
 #include "ui.h"
+#include "sbx_topbar.h"
 
 lv_obj_t * ui_screenhome = NULL;
 lv_obj_t * ui_Image4 = NULL;
@@ -23,6 +24,7 @@ lv_obj_t * ui_Label_Time3 = NULL;
 lv_obj_t * ui_IMG_Wifi3 = NULL;
 lv_obj_t * ui_IMG_PC3 = NULL;
 lv_obj_t * ui_IMG_USB3 = NULL;
+sbx_topbar_icons_t ui_topbar_icons_home;   /* SD / USB / Printer status icons */
 lv_obj_t * ui_S1_Content_Panel3 = NULL;
 lv_obj_t * ui_Panel8 = NULL;
 lv_obj_t * ui_Slider_Print_View1 = NULL;
@@ -209,25 +211,12 @@ void ui_screenhome_screen_init(void)
     lv_obj_set_style_text_color(ui_Label_Time3, lv_color_hex(0xC2CBDE), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(ui_Label_Time3, &lv_font_montserrat_36, LV_PART_MAIN | LV_STATE_DEFAULT);
 
-    /* Printer (PC) link indicator */
-    ui_IMG_PC3 = lv_img_create(ui_Panel_Header3);
-    lv_img_set_src(ui_IMG_PC3, &ui_img_icn_pc_png);
-    lv_obj_set_width(ui_IMG_PC3, LV_SIZE_CONTENT);   /// 100
-    lv_obj_set_height(ui_IMG_PC3, LV_SIZE_CONTENT);    /// 50
-    lv_obj_set_x(ui_IMG_PC3, 0);
-    lv_obj_set_y(ui_IMG_PC3, 0);
-    lv_obj_set_align(ui_IMG_PC3, LV_ALIGN_RIGHT_MID);
-    lv_obj_add_flag(ui_IMG_PC3, LV_OBJ_FLAG_ADV_HITTEST);     /// Flags
-
-    /* USB (export) indicator */
-    ui_IMG_USB3 = lv_img_create(ui_Panel_Header3);
-    lv_img_set_src(ui_IMG_USB3, &ui_img_icn_usb_png);
-    lv_obj_set_width(ui_IMG_USB3, LV_SIZE_CONTENT);   /// 100
-    lv_obj_set_height(ui_IMG_USB3, LV_SIZE_CONTENT);    /// 50
-    lv_obj_set_x(ui_IMG_USB3, -46);
-    lv_obj_set_y(ui_IMG_USB3, 0);
-    lv_obj_set_align(ui_IMG_USB3, LV_ALIGN_RIGHT_MID);
-    lv_obj_add_flag(ui_IMG_USB3, LV_OBJ_FLAG_ADV_HITTEST);     /// Flags
+    /* Right-side device status icons: SD card / USB drive / Printer
+     * Built by sbx_topbar_build(); updated each second via steribox_app.c */
+    sbx_topbar_build(ui_Panel_Header3, &ui_topbar_icons_home);
+    /* Keep old pointers valid so destroy() nulls them safely */
+    ui_IMG_PC3 = ui_topbar_icons_home.icn_printer;
+    ui_IMG_USB3 = ui_topbar_icons_home.icn_usb;
 
     /*============================================================
      * SNAP-SCROLL CONTAINER (720 x 432, bottom-right of screen)

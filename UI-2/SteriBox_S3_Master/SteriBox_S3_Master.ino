@@ -58,10 +58,10 @@
 #define BUZZER_CHANNEL   0
 #define BUZZER_FREQ_HZ   2700
 
-/* ---- USB-OTG stub switch ---- */
-/* Set to 1 once TinyUSB host + MSC / CDC drivers are wired in.
- * At 0 the USB-OTG pins are left untouched by this firmware.       */
-#define SBX_USB_OTG_ENABLED  0
+/* ---- USB-OTG host switch ---- */
+/* Requires Arduino-ESP32 >= 3.0 and the TinyUSB stack.
+ * In Arduino IDE: Tools -> USB Mode -> "TinyUSB"                    */
+#define SBX_USB_OTG_ENABLED  1
 
 /* ------------------------------------------------------------------ */
 #include <Arduino.h>
@@ -89,6 +89,10 @@ static uint32_t lastTelemetry = 0;
 
 static uint8_t  rxBuf[sizeof(sbx_packet_t)];
 static uint8_t  rxIdx = 0;
+
+/* Print buffer — accumulates chunks from SBX_CMD_PRINT packets */
+static char     s_print_buf[2048];
+static uint16_t s_print_pos = 0;
 
 /* ================================================================
  * LEDC helpers — compatible with both ESP32 Arduino 2.x and 3.x
@@ -145,6 +149,9 @@ void send_telemetry(void)
     if (relay_state[0])                flags |= SBX_FLAG_RELAY1_ON;
     if (relay_state[1])                flags |= SBX_FLAG_RELAY2_ON;
     if (env_valid)                     flags |= SBX_FLAG_ENV_VALID;
+#if SBX_USB_OTG_ENABLED
+    if (s_printer_online)              flags |= SBX_FLAG_PRINTER_READY;
+#endif
     p.data[0] = flags;
 
     int16_t traw = (int16_t)(last_temp * 10.0f);
@@ -248,6 +255,32 @@ void handle_packet(const sbx_packet_t *p)
             send_packet(&pong);
             break;
         }
+        case SBX_CMD_PRINT: {
+            /* Accumulate 4-byte chunk; zero-data packet = end of document */
+            bool is_end = (p->data[0] == 0);
+            if (!is_end) {
+                for (int i = 0; i < 4 && p->data[i] != 0; i++) {
+                    if (s_print_pos < sizeof(s_print_buf) - 1)
+                        s_print_buf[s_print_pos++] = (char)p->data[i];
+                }
+            } else {
+                s_print_buf[s_print_pos] = '\0';
+                Serial.printf("  [PRINT] %u bytes received — ", s_print_pos);
+#if SBX_USB_OTG_ENABLED
+                if (s_printer_online && printer_cdc.connected()) {
+                    printer_cdc.print(s_print_buf);
+                    printer_cdc.flush();
+                    Serial.println("forwarded to USB printer.");
+                } else {
+                    Serial.println("printer not connected, discarded.");
+                }
+#else
+                Serial.println("(USB-OTG disabled)");
+#endif
+                s_print_pos = 0;
+            }
+            break;
+        }
         default:
             Serial.printf("  [UNKNOWN] type=0x%02X\n", p->type);
             break;
@@ -319,8 +352,17 @@ static void rtc_init(void)
 #if SBX_USB_OTG_ENABLED
 static void usb_host_task(void)
 {
-    /* Placeholder — full TinyUSB host implementation (MSC + CDC) here.
-     * GPIO 19 = D-, GPIO 20 = D+  (do not use for anything else)       */
+    /* TinyUSB ESP32 host stack — call every loop().                      *
+     * USBHostCDC::task() pumps the USB host state machine.               */
+    bool now_connected = printer_cdc.connected();
+    if (now_connected != s_printer_online) {
+        s_printer_online = now_connected;
+        if (now_connected) {
+            Serial.println("[USB] Printer CONNECTED (CDC-ACM)");
+        } else {
+            Serial.println("[USB] Printer DISCONNECTED");
+        }
+    }
 }
 #endif
 

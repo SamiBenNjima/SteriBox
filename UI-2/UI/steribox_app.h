@@ -33,6 +33,10 @@ void steribox_ev_confirm_pwd(void);
 void steribox_ev_cancel_pwd(void);
 void steribox_ev_save_config(void);
 
+/* Info screen — Export / Print action callbacks (LVGL event handlers) */
+void sbx_info_export_cb(lv_event_t * e);
+void sbx_info_print_cb(lv_event_t * e);
+
 #ifdef __cplusplus
 } /*extern "C"*/
 #endif

@@ -102,7 +102,8 @@ bool sbx_hal_read_env(float * temp_c, float * hum_pct);
 /** Returns true while the SD card is mounted and accessible. */
 bool sbx_hal_sd_present(void);
 
-/** Alias kept for compatibility — maps to sbx_hal_sd_present(). */
+/** Alias kept for compatibility — maps to sbx_hal_sd_present().
+ *  On the slave board the SD card IS the export storage medium. */
 bool sbx_hal_usb_present(void);
 
 /** Write a text report to /steribox/<filename>. Returns false if no SD. */
@@ -117,9 +118,16 @@ bool sbx_hal_log_snapshot(const char * filename, const char * text);
 bool sbx_hal_log_event(const char * tag, const char * detail);
 
 /*------------------------------------------------
- * Printer via CH376S (NOT WIRED yet — stub)
+ * Printer via USB-OTG (ESP32-S3 master, GPIO 19/20)
  *-----------------------------------------------*/
-/** Send a text report to the attached printer. Returns false if absent. */
+/** Returns true when a USB printer is detected on the master's OTG port.
+ *  Slave queries this via sbx_uart_get_printer_present() from the
+ *  master telemetry packet (flag bit SBX_FLAG_PRINTER_READY). */
+bool sbx_hal_printer_present(void);
+
+/** Send a text report to the attached printer. Returns false if absent.
+ *  On the slave this tunnels the text to the master over UART, which
+ *  forwards it to the CH-class USB printer driver. */
 bool sbx_hal_usb_print(const char * text);
 
 /*------------------------------------------------

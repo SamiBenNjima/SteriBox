@@ -395,17 +395,31 @@ bool sbx_hal_usb_export(const char * filename, const char * text)
 }
 
 /*==================================================================
- * Printer via CH376S on UART0  (NOT WIRED yet -> stub)
+ * Printer via USB-OTG on the ESP32-S3 master (tunnelled over UART)
  *=================================================================*/
+bool sbx_hal_printer_present(void)
+{
+    /* The master sets SBX_FLAG_PRINTER_READY in its telemetry when the
+     * TinyUSB stack detects a CDC/printer device on the OTG port.     */
+#if SBX_MASTER_UART_ENABLED
+    return sbx_uart_get_printer_present();
+#else
+    return false;
+#endif
+}
+
 bool sbx_hal_usb_print(const char * text)
 {
-    (void)text;
-    return false;
+    if (!sbx_hal_printer_present()) return false;
 
-    /* ---- CH376S version (uncomment when wired on UART0) ----
-     * Serial.print(text);   // UART0 -> CH376S TXD/RXD (see BLOC C)
-     * return true;
-     */
+    /* Send the text to the master via a dedicated UART command.
+     * The master will forward it to the TinyUSB CDC printer driver.
+     * We send it in 6-byte chunks (sbx_packet_t data[] = 4 bytes only,
+     * so we reuse the TELEMETRY mechanism: each packet carries 4 chars
+     * + type=SBX_CMD_PRINT, until a terminator packet is sent).       */
+    extern void sbx_uart_send_print_text(const char * text); /* steribox_uart.cpp */
+    sbx_uart_send_print_text(text);
+    return true;
 }
 
 /*==================================================================

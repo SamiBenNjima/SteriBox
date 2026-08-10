@@ -18,6 +18,7 @@
 static uint8_t  s_relay_state  = 0;      /* bit0=relay1 bit1=relay2 */
 static bool     s_door_open    = false;
 static bool     s_env_valid    = false;
+static bool     s_printer_ready = false;  /* USB-OTG printer present on master */
 static float    s_temp         = 0.0f;
 static float    s_hum          = 0.0f;
 static uint32_t s_last_rx_ms   = 0;
@@ -42,12 +43,13 @@ static void handle_packet(const sbx_packet_t *p)
         int16_t traw;
         memcpy(&traw, &p->data[1], sizeof(int16_t));
 
-        s_door_open   = flags & SBX_FLAG_DOOR_OPEN;
-        s_relay_state = (flags >> 1) & 0x03;
-        s_env_valid   = flags & SBX_FLAG_ENV_VALID;
-        s_temp        = traw / 10.0f;
-        s_hum         = p->data[3];
-        s_last_rx_ms  = millis();
+        s_door_open    = flags & SBX_FLAG_DOOR_OPEN;
+        s_relay_state  = (flags >> 1) & 0x03;
+        s_env_valid    = flags & SBX_FLAG_ENV_VALID;
+        s_printer_ready = flags & SBX_FLAG_PRINTER_READY;
+        s_temp         = traw / 10.0f;
+        s_hum          = p->data[3];
+        s_last_rx_ms   = millis();
     }
 }
 
@@ -97,9 +99,29 @@ void sbx_uart_send_buzzer(uint8_t pattern)
     send_packet(&p);
 }
 
+/* Send a text document to the master for printing on the USB-OTG printer.
+ * Text is streamed in 4-byte payloads; a zero-length packet terminates.
+ * SBX_CMD_PRINT is defined as 0x04 in sbx_uart_protocol.h.           */
+void sbx_uart_send_print_text(const char * text)
+{
+    if (!text || !s_started) return;
+    const uint8_t * p = (const uint8_t *)text;
+    while (1) {
+        sbx_packet_t pkt = {0};
+        pkt.type = SBX_CMD_PRINT;
+        uint8_t n = 0;
+        while (n < 4 && *p) { pkt.data[n++] = *p++; }
+        send_packet(&pkt);
+        if (n < 4) break;  /* last chunk — null-terminated already */
+        /* add small yield so UART TX FIFO doesn't overflow */
+        delay(2);
+    }
+}
+
 bool sbx_uart_is_linked(void)    { return (millis() - s_last_rx_ms) < 2000; }
 bool sbx_uart_get_door_open(void){ return s_door_open; }
 bool sbx_uart_get_relay(uint8_t relay_id) { return s_relay_state & (1 << relay_id); }
+bool sbx_uart_get_printer_present(void) { return s_printer_ready; }
 
 bool sbx_uart_get_env(float *t, float *h)
 {

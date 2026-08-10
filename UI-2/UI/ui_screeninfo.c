@@ -4,6 +4,9 @@
 // Project name: 3d_printer
 
 #include "ui.h"
+#include "sbx_topbar.h"
+#include "steribox_hal.h"
+#include "steribox_app.h"
 
 lv_obj_t * ui_screeninfo = NULL;
 lv_obj_t * ui_Image5 = NULL;
@@ -13,6 +16,7 @@ lv_obj_t * ui_Label_Time1 = NULL;
 lv_obj_t * ui_IMG_Wifi1 = NULL;
 lv_obj_t * ui_IMG_PC1 = NULL;
 lv_obj_t * ui_IMG_USB1 = NULL;
+sbx_topbar_icons_t ui_topbar_icons_info;   /* SD / USB / Printer status icons */
 lv_obj_t * ui_BTN_Menu_Move_S2 = NULL;
 lv_obj_t * ui_BTN_Menu_Setting_S2 = NULL;
 lv_obj_t * ui_BTN_Menu_Move_S5 = NULL;
@@ -115,25 +119,10 @@ void ui_screeninfo_screen_init(void)
     lv_obj_set_style_text_color(ui_Label_Time1, lv_color_hex(0xC2CBDE), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(ui_Label_Time1, &lv_font_montserrat_36, LV_PART_MAIN | LV_STATE_DEFAULT);
 
-    /* Printer (PC) link indicator */
-    ui_IMG_PC1 = lv_img_create(ui_Panel_Header1);
-    lv_img_set_src(ui_IMG_PC1, &ui_img_icn_pc_png);
-    lv_obj_set_width(ui_IMG_PC1, LV_SIZE_CONTENT);   /// 100
-    lv_obj_set_height(ui_IMG_PC1, LV_SIZE_CONTENT);    /// 50
-    lv_obj_set_x(ui_IMG_PC1, 0);
-    lv_obj_set_y(ui_IMG_PC1, 0);
-    lv_obj_set_align(ui_IMG_PC1, LV_ALIGN_RIGHT_MID);
-    lv_obj_add_flag(ui_IMG_PC1, LV_OBJ_FLAG_ADV_HITTEST);     /// Flags
-
-    /* USB (export) indicator */
-    ui_IMG_USB1 = lv_img_create(ui_Panel_Header1);
-    lv_img_set_src(ui_IMG_USB1, &ui_img_icn_usb_png);
-    lv_obj_set_width(ui_IMG_USB1, LV_SIZE_CONTENT);   /// 100
-    lv_obj_set_height(ui_IMG_USB1, LV_SIZE_CONTENT);    /// 50
-    lv_obj_set_x(ui_IMG_USB1, -46);
-    lv_obj_set_y(ui_IMG_USB1, 0);
-    lv_obj_set_align(ui_IMG_USB1, LV_ALIGN_RIGHT_MID);
-    lv_obj_add_flag(ui_IMG_USB1, LV_OBJ_FLAG_ADV_HITTEST);     /// Flags
+    /* Right-side device status icons: SD card / USB drive / Printer */
+    sbx_topbar_build(ui_Panel_Header1, &ui_topbar_icons_info);
+    ui_IMG_PC1  = ui_topbar_icons_info.icn_printer;
+    ui_IMG_USB1 = ui_topbar_icons_info.icn_usb;
 
     ui_BTN_Menu_Move_S2 = lv_img_create(ui_screeninfo);
     lv_img_set_src(ui_BTN_Menu_Move_S2, &ui_img_btn_print_v2_png);
@@ -564,9 +553,12 @@ void ui_screeninfo_screen_init(void)
     lv_obj_set_style_text_align(ui_Label_Reset1, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(ui_Label_Reset1, &lv_font_montserrat_36, LV_PART_MAIN | LV_STATE_DEFAULT);
 
+    /* Wire Export and Print buttons with device-presence guards */
+    lv_obj_add_event_cb(ui_BTN_Reset2, sbx_info_export_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(ui_BTN_Reset1, sbx_info_print_cb,  LV_EVENT_CLICKED, NULL);
+
     lv_obj_add_event_cb(ui_BTN_Menu_Setting_S2, ui_event_BTN_Menu_Setting_S2, LV_EVENT_ALL, NULL);
     lv_obj_add_event_cb(ui_BTN_Menu_Move_S5, ui_event_BTN_Menu_Move_S5, LV_EVENT_ALL, NULL);
-
 }
 
 void ui_screeninfo_screen_destroy(void)

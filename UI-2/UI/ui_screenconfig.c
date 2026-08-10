@@ -7,6 +7,7 @@
 
 #include "ui.h"
 #include "steribox_app.h"
+#include "sbx_topbar.h"
 
 /* Synchronize button: apply the date/time to the RTC without leaving */
 static void sync_btn_cb(lv_event_t * e)
@@ -70,6 +71,7 @@ lv_obj_t * ui_IMG_USB6         = NULL;
 lv_obj_t * ui_Label_Time5      = NULL;
 lv_obj_t * ui_Panel_Header5    = NULL;
 lv_obj_t * ui_Label_Header5    = NULL;
+sbx_topbar_icons_t ui_topbar_icons_cfg;  /* SD / USB / Printer icons for Config */
 
 /* page indicator dots (file-local) */
 static lv_obj_t * ui_cfg_dot0 = NULL;
@@ -321,25 +323,9 @@ void ui_screenconfig_screen_init(void)
     lv_obj_set_style_text_color(ui_Label_Time5, lv_color_hex(0x9098AA), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(ui_Label_Time5, &lv_font_montserrat_36, LV_PART_MAIN | LV_STATE_DEFAULT);
 
-    /* Printer (PC) link indicator */
-    lv_obj_t * cfg_pc = lv_img_create(ui_Panel_Header5);
-    lv_img_set_src(cfg_pc, &ui_img_icn_pc_png);
-    lv_obj_set_width(cfg_pc, LV_SIZE_CONTENT);
-    lv_obj_set_height(cfg_pc, LV_SIZE_CONTENT);
-    lv_obj_set_x(cfg_pc, -4);
-    lv_obj_set_y(cfg_pc, 0);
-    lv_obj_set_align(cfg_pc, LV_ALIGN_RIGHT_MID);
-    lv_obj_add_flag(cfg_pc, LV_OBJ_FLAG_ADV_HITTEST);
-
-    /* USB (export) indicator */
-    ui_IMG_USB6 = lv_img_create(ui_Panel_Header5);
-    lv_img_set_src(ui_IMG_USB6, &ui_img_icn_usb_png);
-    lv_obj_set_width(ui_IMG_USB6, LV_SIZE_CONTENT);
-    lv_obj_set_height(ui_IMG_USB6, LV_SIZE_CONTENT);
-    lv_obj_set_x(ui_IMG_USB6, -50);
-    lv_obj_set_y(ui_IMG_USB6, 0);
-    lv_obj_set_align(ui_IMG_USB6, LV_ALIGN_RIGHT_MID);
-    lv_obj_add_flag(ui_IMG_USB6, LV_OBJ_FLAG_ADV_HITTEST);
+    /* Right-side device status icons: SD card / USB drive / Printer */
+    sbx_topbar_build(ui_Panel_Header5, &ui_topbar_icons_cfg);
+    ui_IMG_USB6 = ui_topbar_icons_cfg.icn_usb;
 
     /* ── Nav hit-areas (invisible, keep SquareLine routing) ──────── */
     ui_BTN_Menu_Setting_S3 = lv_img_create(ui_screenconfig);
