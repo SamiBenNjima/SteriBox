@@ -324,32 +324,28 @@ void ui_screenconfig_screen_init(void)
     sbx_topbar_build(ui_Panel_Header5, &ui_topbar_icons_cfg);
     ui_IMG_USB6 = ui_topbar_icons_cfg.icn_usb;
 
-    /* ── Nav hit-areas (invisible, keep SquareLine routing) ──────── */
-    ui_BTN_Menu_Setting_S3 = lv_img_create(ui_screenconfig);
-    lv_img_set_src(ui_BTN_Menu_Setting_S3, &ui_img_btn_setting_png);
-    lv_obj_set_size(ui_BTN_Menu_Setting_S3, 79, 160);
-    lv_obj_add_flag(ui_BTN_Menu_Setting_S3,
-                    LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_ADV_HITTEST);
+    /* ── Nav hit-areas — invisible transparent zones (nav drawn by sbx_navbar_build) */
+    ui_BTN_Menu_Setting_S3 = lv_obj_create(ui_screenconfig);
+    lv_obj_remove_style_all(ui_BTN_Menu_Setting_S3);
+    lv_obj_set_size(ui_BTN_Menu_Setting_S3, 75, 160);
+    lv_obj_set_pos(ui_BTN_Menu_Setting_S3, 0, 0);
+    lv_obj_add_flag(ui_BTN_Menu_Setting_S3, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_clear_flag(ui_BTN_Menu_Setting_S3, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_opa(ui_BTN_Menu_Setting_S3, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
 
-    ui_BTN_Menu_Move_S7 = lv_img_create(ui_screenconfig);
-    lv_img_set_src(ui_BTN_Menu_Move_S7, &ui_img_btn_move_png);
-    lv_obj_set_size(ui_BTN_Menu_Move_S7, 79, 160);
+    ui_BTN_Menu_Move_S7 = lv_obj_create(ui_screenconfig);
+    lv_obj_remove_style_all(ui_BTN_Menu_Move_S7);
+    lv_obj_set_size(ui_BTN_Menu_Move_S7, 75, 160);
     lv_obj_set_pos(ui_BTN_Menu_Move_S7, 0, 160);
-    lv_obj_add_flag(ui_BTN_Menu_Move_S7,
-                    LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_ADV_HITTEST);
+    lv_obj_add_flag(ui_BTN_Menu_Move_S7, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_clear_flag(ui_BTN_Menu_Move_S7, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_opa(ui_BTN_Menu_Move_S7, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
 
-    ui_BTN_Menu_Move_S6 = lv_img_create(ui_screenconfig);
-    lv_img_set_src(ui_BTN_Menu_Move_S6, &ui_img_btn_setting_png);
-    lv_obj_set_size(ui_BTN_Menu_Move_S6, 79, 160);
+    ui_BTN_Menu_Move_S6 = lv_obj_create(ui_screenconfig);
+    lv_obj_remove_style_all(ui_BTN_Menu_Move_S6);
+    lv_obj_set_size(ui_BTN_Menu_Move_S6, 75, 160);
     lv_obj_set_pos(ui_BTN_Menu_Move_S6, 0, 320);
-    lv_obj_add_flag(ui_BTN_Menu_Move_S6,
-                    LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_ADV_HITTEST);
+    lv_obj_add_flag(ui_BTN_Menu_Move_S6, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_clear_flag(ui_BTN_Menu_Move_S6, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_opa(ui_BTN_Menu_Move_S6, 0, LV_PART_MAIN | LV_STATE_DEFAULT);  /* icon shown by nav_bar */
+
 
     /* ── Password overlay ─────────────────────────────────────────── */
     ui_popup = lv_obj_create(ui_screenconfig);
