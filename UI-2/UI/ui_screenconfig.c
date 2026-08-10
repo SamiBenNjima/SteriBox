@@ -410,7 +410,7 @@ void ui_screenconfig_screen_init(void)
     ui_Button2 = lv_btn_create(ui_Panel2);
     lv_obj_set_size(ui_Button2, 152, 44);
     lv_obj_set_align(ui_Button2, LV_ALIGN_BOTTOM_LEFT);
-    lv_obj_set_pos(ui_Button2, 16, -14);
+    lv_obj_set_pos(ui_Button2, 16, 8);
     lv_obj_clear_flag(ui_Button2, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_bg_color(ui_Button2,     lv_color_hex(COL_ACCENT),   LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_bg_opa(ui_Button2,       255,                         LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -426,7 +426,7 @@ void ui_screenconfig_screen_init(void)
     ui_Button1 = lv_btn_create(ui_Panel2);
     lv_obj_set_size(ui_Button1, 152, 44);
     lv_obj_set_align(ui_Button1, LV_ALIGN_BOTTOM_RIGHT);
-    lv_obj_set_pos(ui_Button1, -16, -14);
+    lv_obj_set_pos(ui_Button1, -16, 8);
     lv_obj_clear_flag(ui_Button1, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_bg_color(ui_Button1,     lv_color_hex(0x3A4860),   LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_bg_opa(ui_Button1,       255,                       LV_PART_MAIN | LV_STATE_DEFAULT);

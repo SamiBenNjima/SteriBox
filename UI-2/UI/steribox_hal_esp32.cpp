@@ -41,9 +41,9 @@
 /*------------------------------------------------------------------
  * Build switches
  *-----------------------------------------------------------------*/
-/* Serial1 (link to the GPIO master) uses GPIO 43/44 - the SAME pins as
- * UART0, i.e. the CH340 USB-serial console. As soon as sbx_uart_init()
- * runs, the Serial Monitor goes silent / prints binary garbage.
+/* Serial1 (link to the GPIO master) uses GPIO 43/44 on THIS board (slave).
+ * On the new ESP32-S3 DevKit master those same pin numbers (43/44) are its
+ * UART0/CH340 debug port — they are independent wires and do not conflict.
  * Set to 0 to keep a clean console while debugging (relays/buzzer/door
  * on the master board stop working while it is 0). */
 #ifndef SBX_MASTER_UART_ENABLED

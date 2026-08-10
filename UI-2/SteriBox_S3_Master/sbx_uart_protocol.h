@@ -9,12 +9,17 @@
  * to match the existing project convention.
  *
  * Wiring:
- *   Master  Serial1 : RX=18  TX=17    (ESP32-S3 DevKit)
- *   Slave   Serial1 : RX=44  TX=43    (CrowPanel — this board)
+ *   Master  Serial1 : RX=18  TX=17    (ESP32-S3 DevKit new pin map)
+ *   Slave   Serial1 : RX=44  TX=43    (CrowPanel fixed pins — UNCHANGED)
  *   TX(master,17) -> RX(slave,44)
  *   TX(slave,43)  -> RX(master,18)
  *   GND <-> GND
  *   Baud: 115200 8N1
+ *
+ * USB notes (ESP32-S3 DevKit):
+ *   GPIO 43/44 = UART0 (CH340 debug USB)  — Serial Monitor / programming
+ *   GPIO 19/20 = USB-OTG D-/D+            — USB devices (printer, drive)
+ *   Do NOT use GPIO 19/20 for I2C or UART on the master board.
  */
 #ifndef SBX_UART_PROTOCOL_H
 #define SBX_UART_PROTOCOL_H
@@ -33,7 +38,7 @@ enum {
     SBX_CMD_SET_BUZZER  = 0x02,  /* data0=pattern (sbx_beep_t)           */
     SBX_CMD_PING        = 0x03,
 
-    /* master -> slave (telemetry/replies) */
+    /* master -> slave (telemetry / replies) */
     SBX_MSG_TELEMETRY   = 0x10,  /* data0=flags, data1..2=temp*10 (i16 LE), data3=hum% */
     SBX_MSG_PONG        = 0x11,
 };
@@ -48,10 +53,11 @@ typedef struct __attribute__((packed)) {
     uint8_t header;     /* SBX_HDR_MASTER or SBX_HDR_SLAVE */
     uint8_t type;       /* SBX_CMD_* or SBX_MSG_*          */
     uint8_t data[4];
-    uint8_t checksum;   /* XOR of header,type,data[0..3]    */
+    uint8_t checksum;   /* XOR of header, type, data[0..3] */
 } sbx_packet_t;
 
-static inline uint8_t sbx_checksum(const sbx_packet_t *p) {
+static inline uint8_t sbx_checksum(const sbx_packet_t *p)
+{
     uint8_t c = p->header ^ p->type;
     for (uint8_t i = 0; i < 4; i++) c ^= p->data[i];
     return c;

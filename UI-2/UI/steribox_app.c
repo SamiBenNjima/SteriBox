@@ -259,7 +259,7 @@ static void usb_icons_refresh(void)
 
     /* Print one serial message on each transition */
     if(sd_was_present && !sd_now) {
-        Serial.println("[SD] No SD card — logging disabled, icon shown");
+        //Serial.println("[SD] No SD card — logging disabled, icon shown");
     }
     sd_was_present = sd_now;
 

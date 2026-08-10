@@ -1,7 +1,11 @@
 /**
  * @file steribox_uart.cpp
- * SteriBox - slave-side (ESP32-S3) UART link to the GPIO master.
- * See steribox_uart.h and sbx_uart_protocol.h for the protocol.
+ * SteriBox — slave-side (ESP32-S3 CrowPanel) UART link to the GPIO master.
+ *
+ * Master board: ESP32-S3 DevKit  Serial1 RX=18 TX=17
+ * Slave  board: CrowPanel S3 5"  Serial1 RX=44 TX=43  (THIS file)
+ *
+ * See steribox_uart.h and sbx_uart_protocol.h for the protocol details.
  */
 #include "steribox_uart.h"
 #include "sbx_uart_protocol.h"

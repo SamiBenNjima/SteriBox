@@ -1,87 +1,116 @@
 STERIBOX MASTER/SLAVE WIRING REFERENCE
 ======================================
+Branch: feature/esp32s3-master
+Master upgraded from ESP32-S to ESP32-S3 DevKit (2026-08-10)
 
 ═══════════════════════════════════════════════════════════════════════════════
-MASTER BOARD (ESP32-S DevKit) - GPIO PERIPHERALS
+USB PORTS — ESP32-S3 DEVKIT (new master board)
+═══════════════════════════════════════════════════════════════════════════════
+
+The ESP32-S3 DevKit has TWO USB-C ports:
+
+  ┌─────────────────────────────────────────────────────────────┐
+  │  USB-UART (CH340 chip)                                      │
+  │  → Use this for: Arduino IDE upload, Serial Monitor, debug  │
+  │  → GPIO 43 (TXD0) / 44 (RXD0) internally routed to CH340   │
+  └─────────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────────┐
+  │  USB-OTG (native ESP32-S3 peripheral)                       │
+  │  → Use this for: USB devices — printer, USB drive           │
+  │  → GPIO 19 (D−) / 20 (D+) — RESERVED for OTG              │
+  │  → Do NOT connect any other peripheral to GPIO 19 or 20     │
+  └─────────────────────────────────────────────────────────────┘
+
+
+═══════════════════════════════════════════════════════════════════════════════
+MASTER BOARD (ESP32-S3 DevKit) — GPIO PERIPHERALS
 ═══════════════════════════════════════════════════════════════════════════════
 
 PIN MAP:
 --------
-GPIO 25  ──┬── Relay 1 module input (active LOW: pull to GND to ON)
+GPIO 1   ──┬── Relay 1 module input (active LOW: pull to GND to ON)
            │   Recommended: relay module with built-in flywheel diode
            │   (e.g., 2-channel relay module SRD-05VDC)
            │
 
-GPIO 26  ──┬── Relay 2 module input (active LOW: pull to GND to ON)
+GPIO 2   ──┬── Relay 2 module input (active LOW: pull to GND to ON)
            │   Same module as above, second channel
            │
 
-GPIO 27  ──┬── Buzzer (+) pin
-           │   Recommend: 5V buzzer or active buzzer with series 1kΩ resistor
-           │   Connect (-) pin to GND
+GPIO 3   ──┬── Buzzer (+) pin
+           │   Passive piezo buzzer via LEDC PWM at 2700 Hz
+           │   Connect (−) pin to GND
+           │   Optional: 1kΩ series resistor if buzzer draws > 40 mA
            │
 
-GPIO 32  ──┬── Cooling Fan signal (active HIGH: output HIGH when temp > 26°C)
-           │   Connect to fan relay/transistor driver circuit (+) input
+GPIO 4   ──┬── Door/PIR sensor input (HIGH = open / motion)
+           │   Can be direct GPIO or through a pull-down (see below)
+           │   PIR: 3.3V ─── PIR[VCC]  /  GND ─── PIR[GND]  /  GPIO4 ─ PIR[OUT]
+           │   Door switch (N.O.): switch[A] ─── GPIO4 ──┬─ 10kΩ ──┬── 3.3V
+           │                                 switch[B] ─── GND
            │
 
-GPIO 33  ──┬── DHT22 data pin (OneWire)
+GPIO 5   ──┬── DHT22 data pin (OneWire)
            │   Requires: 10kΩ pullup resistor from data to 3.3V
            │   Wire: 3.3V ─── DHT22[VCC]
            │         GND  ─── DHT22[GND]
-           │         GPIO33 ─ DHT22[DATA] ──┬─ 10kΩ ──┬── 3.3V
-           │
-           
-GPIO 34  ──┬── Door/PIR sensor input (HIGH = open/motion)
-           │   Can be direct GPIO (input only) or through a pull-down
-           │   Simple door switch: door open → pulls GPIO 34 to 3.3V (or leave floating)
-           │   PIR sensor: 3.3V ─── PIR[VCC]
-           │              GND  ─── PIR[GND]
-           │              GPIO34 ─ PIR[OUT]
+           │         GPIO5 ─ DHT22[DATA] ──┬─ 10kΩ ──┬── 3.3V
            │
 
-GPIO 2   ──┬── Onboard LED (blinks on packet rx, for debug only)
-           │   Built into ESP32-S, no wiring needed
+GPIO 6   ──┬── Cooling Fan signal (active HIGH — HIGH = fan ON when temp > 26°C)
+           │   Connect to fan's relay/transistor driver circuit (+) input
            │
 
-GND      ──┬── Common ground (ALL grounds connected)
-           │
-3.3V     ──┬── Power for DHT22, PIR (if using 3.3V version)
-           │
-5V       ──┬── Power for relays, buzzer (if using 5V)
+GPIO 8   ──┬── I2C SDA — DS3231 RTC
+GPIO 9   ──┴── I2C SCL — DS3231 RTC
+           (DS3231 addr 0x68, standard 10kΩ pullups to 3.3V)
+
+GPIO 48  ──┬── Onboard RGB NeoPixel (blinks on packet receive — debug only)
+           │   Built into the ESP32-S3 DevKit, no wiring needed
            │
 
-SERIAL/UART:
-------------
-GPIO 16 (RX2)  ← receives from CrowPanel TX (GPIO 43)
-GPIO 17 (TX2)  → sends to CrowPanel RX (GPIO 44)
+GPIO 19  ──┐
+GPIO 20  ──┴── USB-OTG D−/D+   *** RESERVED — do not connect anything ***
+
+SERIAL/UART TO SLAVE (CrowPanel):
+-----------------------------------
+GPIO 17 (TX1) → sends to CrowPanel RX (GPIO 44)
+GPIO 18 (RX1) ← receives from CrowPanel TX (GPIO 43)
 
 
 ═══════════════════════════════════════════════════════════════════════════════
-SLAVE BOARD (ESP32-S3 CrowPanel 5")
+SLAVE BOARD (ESP32-S3 CrowPanel 5") — UNCHANGED
 ═══════════════════════════════════════════════════════════════════════════════
 
 SERIAL (UART1) TO MASTER:
--------------------------
-GPIO 44 (RX1)  ← receives from Master TX17
-GPIO 43 (TX1)  → sends to Master RX16
+--------------------------
+GPIO 44 (RX1) ← receives from Master TX (GPIO 17)
+GPIO 43 (TX1) → sends to Master RX (GPIO 18)
 
-All other GPIO are committed to the display RGB bus + touch, do NOT use them.
+I2C (shared — display touch + DS3231 RTC):
+   SDA = GPIO 19 (only at boot, before tft.begin() re-routes it)
+   SCL = GPIO 20
+
+SD card (onboard SPI):
+   SCK=12, MISO=13, MOSI=11, CS=10
+
+All other GPIO are committed to the display RGB bus + touch. Do NOT use them.
 
 
 ═══════════════════════════════════════════════════════════════════════════════
 MASTER ↔ SLAVE UART WIRING (the critical link)
 ═══════════════════════════════════════════════════════════════════════════════
 
-     MASTER (ESP32-S)          SLAVE (ESP32-S3 CrowPanel)
-     
-     GPIO 17 (TX2)  ───────────►  GPIO 44 (RX1)
-     
-     GPIO 16 (RX2)  ◄──────────  GPIO 43 (TX1)
-     
-     GND ───────────────────────  GND
-     
-Note: Do NOT connect VCC/3.3V of one board to the other (each has its own 
+     MASTER (ESP32-S3 DevKit)         SLAVE (ESP32-S3 CrowPanel)
+
+     GPIO 17 (TX1)  ────────────────►  GPIO 44 (RX1)
+
+     GPIO 18 (RX1)  ◄────────────────  GPIO 43 (TX1)
+
+     GND ──────────────────────────── GND
+
+Note: Do NOT connect VCC/3.3V of one board to the other (each has its own
       power supply and USB regulator).
 
 Baud: 115200, 8 data bits, no parity, 1 stop bit (8N1)
@@ -99,17 +128,17 @@ Typical 2-channel relay module pinout:
   [GND]  [VCC]  [NO1]     [COM1]  [NC1]  (relay 1 contacts)
            [NO2]     [COM2]  [NC2]       (relay 2 contacts)
 
-Wiring for SteriBox:
-  GPIO 25 (CH1_IN)  ── 1kΩ resistor ── Relay module CH1_IN  (active LOW)
-  GPIO 26 (CH2_IN)  ── 1kΩ resistor ── Relay module CH2_IN  (active LOW)
-  
+Wiring for SteriBox (new master GPIOs):
+  GPIO 1 (CH1_IN)  ── 1kΩ resistor ── Relay module CH1_IN  (active LOW)
+  GPIO 2 (CH2_IN)  ── 1kΩ resistor ── Relay module CH2_IN  (active LOW)
+
   Relay module VCC  ── +5V supply
   Relay module GND  ── common GND
-  
+
   Each relay's NO (normally open) contact:
     COM ── [UV lamp ballast positive]
     NO  ── [power supply +24V or whatever]
-    
+
   When GPIO pulled LOW → relay energizes → UV lamp ON
   When GPIO pulled HIGH → relay de-energizes → UV lamp OFF
 
@@ -120,9 +149,9 @@ DHT22 WIRING (temperature + humidity)
 
 DHT22 pinout (usually): [1=VCC] [2=DATA] [3=GND] [4=NC]
 
-Wire to ESP32-S GPIO 33:
+Wire to ESP32-S3 DevKit GPIO 5:
   DHT22[1] VCC   ── +3.3V supply
-  DHT22[2] DATA  ── GPIO 33 ──┬─ 10kΩ resistor ──┬─ +3.3V
+  DHT22[2] DATA  ── GPIO 5 ──┬─ 10kΩ resistor ──┬─ +3.3V
   DHT22[3] GND   ── common GND
 
 Note: Pullup resistor is REQUIRED for OneWire protocol.
@@ -130,65 +159,74 @@ Note: Pullup resistor is REQUIRED for OneWire protocol.
 
 
 ═══════════════════════════════════════════════════════════════════════════════
-DOOR/PIR SENSOR WIRING
-═══════════════════════════════════════════════════════════════════════════════
-
-Option A - Simple door switch (normally open):
-  Switch[A] ── GPIO 34 ──┬─ 10kΩ ──┬── +3.3V
-  Switch[B] ── GND
-
-  Open door → GPIO 34 = HIGH
-  Closed door → GPIO 34 = LOW
-
-
-Option B - PIR motion sensor (e.g., HC-SR501):
-  PIR[VCC]   ── +3.3V supply
-  PIR[GND]   ── common GND
-  PIR[OUT]   ── GPIO 34
-
-  Motion detected → PIR[OUT] = HIGH → GPIO 34 = HIGH
-  No motion → PIR[OUT] = LOW → GPIO 34 = LOW
-
-
-═══════════════════════════════════════════════════════════════════════════════
 BUZZER WIRING
 ═══════════════════════════════════════════════════════════════════════════════
 
 Simple piezo buzzer (passive, needs PWM to sound):
-  Buzzer[+] ── GPIO 27  (via LEDC PWM at 2700 Hz)
+  Buzzer[+] ── GPIO 3  (via LEDC PWM at 2700 Hz)
   Buzzer[-] ── GND
 
-If buzzer draws too much current (> 100mA), add a series 1kΩ resistor:
-  GPIO 27 ── 1kΩ ── Buzzer[+]
-               └─ Buzzer[-] ── GND
+If buzzer draws too much current (> 40 mA), add a series 1kΩ resistor:
+  GPIO 3 ── 1kΩ ── Buzzer[+]
+              └─ Buzzer[-] ── GND
 
-Optional: 1µF capacitor across buzzer pins for filtering noise.
+
+═══════════════════════════════════════════════════════════════════════════════
+DS3231 RTC WIRING
+═══════════════════════════════════════════════════════════════════════════════
+
+Wire to ESP32-S3 DevKit I2C (GPIO 8 SDA, GPIO 9 SCL):
+  DS3231[VCC]  ── +3.3V supply
+  DS3231[GND]  ── common GND
+  DS3231[SDA]  ── GPIO 8 ──┬─ 4.7kΩ ──┬─ 3.3V
+  DS3231[SCL]  ── GPIO 9 ──┬─ 4.7kΩ ──┬─ 3.3V
+
+I2C address: 0x68 (hard-wired in DS3231)
+
+
+═══════════════════════════════════════════════════════════════════════════════
+USB-OTG (printer / USB drive) — FUTURE IMPLEMENTATION
+═══════════════════════════════════════════════════════════════════════════════
+
+The USB-OTG native peripheral on the ESP32-S3 DevKit uses:
+  GPIO 19 = D−
+  GPIO 20 = D+
+
+These pins are driven by the USB-OTG port connector on the ESP32-S3 DevKit
+board itself. Connect a USB-A female adapter (OTG adapter) to this port to
+plug in:
+  • USB printer (CDC ACM class)
+  • USB flash drive (MSC class)
+
+The full TinyUSB host driver is planned for a follow-up branch.
+Currently a stub is compiled in (SBX_USB_OTG_ENABLED = 0 by default).
+Enable it in SteriBox_S3_Master.ino once the TinyUSB Host MSC/CDC
+implementation is added.
 
 
 ═══════════════════════════════════════════════════════════════════════════════
 POWER SUPPLY CONSIDERATIONS
 ═══════════════════════════════════════════════════════════════════════════════
 
-ESP32-S (Master):
-  - Powered via USB (5V) or external power supply
+ESP32-S3 Devkit (Master):
+  - Powered via USB-UART port (debug/code USB), 5V
   - Onboard LDO regulates to 3.3V for GPIO logic
-  - GPIO 25/26 can sink ~40mA each (relay modules typically use ~65mA @ 5V)
-    → Use relay module's VCC = 5V from external supply, NOT from ESP32 3.3V
+  - GPIO 1/2 can sink ~40 mA each → use relay module VCC=5V from external supply
 
 ESP32-S3 CrowPanel (Slave):
-  - Powered via USB-C (5V) or external power supply
+  - Powered via its USB-C port (5V) or external supply
   - The RGB display bus consumes most of the power
-  - DO NOT power the entire sterilizer from the board's USB; get a separate
-    5V PSU or connect both boards to the same lab PSU.
+  - DO NOT power the entire sterilizer from the board's USB; use a separate PSU
 
 Relay coils (@ 5V, typical):
   - Single relay: ~65 mA
   - Two relays energized: ~130 mA
-  - → Use external 5V PSU capable of ≥ 1A (or 2A for headroom)
+  - → Use external 5V PSU capable of ≥ 2A for headroom
 
 GND tying:
   - All GND pins must be connected to a common rail
-  - Master GND → Slave GND (through UART wiring)
+  - Master GND → Slave GND (via UART wiring GND wire)
   - Relay module GND → common GND
   - DHT22 GND → common GND
   - PIR GND → common GND
+  - DS3231 GND → common GND
