@@ -62,8 +62,10 @@ static lv_timer_t * cycle_timer;
 static lv_timer_t * warmup_timer;      /* 3 s pre-lamp safety countdown */
 static uint8_t      warmup_left;
 static lv_timer_t * done_timer;        /* holds "DONE" ~3 s, then arms START */
+static lv_timer_t * pause_timeout_timer; /* 30 s pause timeout before auto-abort */
 
 #define SBX_WARMUP_S 3
+#define SBX_PAUSE_TIMEOUT_MS 30000     /* 30 s max pause window */
 
 /* End-of-cycle result popup (defined below, shown from cycle_stop) */
 static void show_end_popup(bool aborted);
@@ -370,8 +372,9 @@ static void done_revert_now(void)
 static void cycle_stop(sbx_state_t end_state)
 {
     lamps_set(false);
-    if(cycle_timer)  { lv_timer_del(cycle_timer);  cycle_timer  = NULL; }
-    if(warmup_timer) { lv_timer_del(warmup_timer); warmup_timer = NULL; }
+    if(cycle_timer)         { lv_timer_del(cycle_timer);         cycle_timer         = NULL; }
+    if(warmup_timer)        { lv_timer_del(warmup_timer);        warmup_timer        = NULL; }
+    if(pause_timeout_timer) { lv_timer_del(pause_timeout_timer); pause_timeout_timer = NULL; }
 
     if(end_state == SBX_STATE_DONE) {
         persist.cycles_done++;
@@ -434,12 +437,28 @@ static void cycle_stop(sbx_state_t end_state)
     }
 }
 
-/* SAFETY: door opened mid-run/warm-up -> freeze, wait for the user. */
+/* 30 s pause timeout callback: aborts cycle if not resumed in time */
+static void pause_timeout_cb(lv_timer_t * t)
+{
+    (void)t;
+    pause_timeout_timer = NULL;
+    if(state == SBX_STATE_PAUSED_DOOR) {
+        cycle_stop(SBX_STATE_IDLE);   /* pause timed out (30 s) -> auto abort */
+    }
+}
+
+/* SAFETY: door opened mid-run/warm-up -> freeze, arm 30 s timeout. */
 static void cycle_pause_door(void)
 {
     lamps_set(false);
-    if(cycle_timer)  { lv_timer_del(cycle_timer);  cycle_timer  = NULL; }
-    if(warmup_timer) { lv_timer_del(warmup_timer); warmup_timer = NULL; }
+    if(cycle_timer)         { lv_timer_del(cycle_timer);         cycle_timer         = NULL; }
+    if(warmup_timer)        { lv_timer_del(warmup_timer);        warmup_timer        = NULL; }
+    if(pause_timeout_timer) { lv_timer_del(pause_timeout_timer); pause_timeout_timer = NULL; }
+
+    /* Arm 30 s pause timeout to auto-abort if user doesn't resume */
+    pause_timeout_timer = lv_timer_create(pause_timeout_cb, SBX_PAUSE_TIMEOUT_MS, NULL);
+    lv_timer_set_repeat_count(pause_timeout_timer, 1);
+
     sbx_hal_buzzer(SBX_BEEP_ALARM);
     set_status("DOOR !");
     lv_obj_set_style_text_color(ui_Label1, lv_color_hex(0xFF3030), 0);
@@ -503,6 +522,9 @@ static void warmup_tick_cb(lv_timer_t * t)
  * always via the 3 s warm-up delay. */
 static void cycle_begin(bool fresh)
 {
+    /* Cancel pause timeout if active */
+    if(pause_timeout_timer) { lv_timer_del(pause_timeout_timer); pause_timeout_timer = NULL; }
+
     /*SAFETY: never energise with the door open*/
     if(sbx_hal_door_is_open()) {
         sbx_hal_buzzer(SBX_BEEP_WARN);
