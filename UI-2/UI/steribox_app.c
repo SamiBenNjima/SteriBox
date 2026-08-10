@@ -673,13 +673,17 @@ static void print_btn_cb(lv_event_t * e)
 void sbx_info_export_cb(lv_event_t * e)
 {
     if(lv_event_get_code(e) != LV_EVENT_CLICKED) return;
-    sbx_try_export();
+    char report[640];
+    build_report(report, sizeof(report), NULL);
+    sbx_try_export(ui_screeninfo, "steribox_log.txt", report);
 }
 
 void sbx_info_print_cb(lv_event_t * e)
 {
     if(lv_event_get_code(e) != LV_EVENT_CLICKED) return;
-    sbx_try_print();
+    char report[640];
+    build_report(report, sizeof(report), NULL);
+    sbx_try_print(ui_screeninfo, report);
 }
 
 /*==================================================================
