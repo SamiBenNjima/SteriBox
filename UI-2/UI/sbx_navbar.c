@@ -23,14 +23,12 @@ LV_IMG_DECLARE(ui_img_icn_config_png);
 #define NAV_W           75
 #define NAV_H           480
 #define ROW_H           160
-#define ICON_SZ         36
 #define ACCENT_W        5
-#define ACCENT_H        92
-#define ACCENT_RADIUS   3
+#define ACCENT_H        160   /* Full height of the button slot */
+#define ACCENT_RADIUS   0   /* Clean full-edge bar */
 
 /* Icon tint colours */
-#define COL_ACTIVE      0x00D2FF   /* cyan  — matches SBX_COL_ACCENT */
-#define COL_INACTIVE_BG 0x1A2233   /* slightly lighter dark bg for inactive rows */
+#define COL_ACTIVE      0x00D2FF   /* cyan — matches SBX_COL_ACCENT */
 
 static const lv_img_dsc_t * const nav_icons[3] = {
     &ui_img_icn_home_png,
@@ -61,36 +59,37 @@ lv_obj_t * sbx_navbar_build(lv_obj_t * screen, int active_row)
         bool active = (row == active_row);
         int  y_top  = row * ROW_H;
 
-        /* ── Row background ───────────────────────────────────────── */
+        /* ── Row container (uniform background color for all rows) ── */
         lv_obj_t * row_bg = lv_obj_create(nav);
         lv_obj_remove_style_all(row_bg);
         lv_obj_set_size(row_bg, NAV_W, ROW_H);
         lv_obj_set_pos(row_bg, 0, y_top);
         lv_obj_clear_flag(row_bg, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
-        lv_obj_set_style_bg_color(row_bg,
-            lv_color_hex(active ? SBX_COL_BG : COL_INACTIVE_BG), 0);
+        lv_obj_set_style_bg_color(row_bg, lv_color_hex(SBX_COL_BG), 0);
         lv_obj_set_style_bg_opa(row_bg, 255, 0);
 
-        /* ── Icon image ────────────────────────────────────────────── */
+        /* ── Icon image (scaled to ~48x48 using zoom = 341) ────────── */
         lv_obj_t * icn = lv_img_create(row_bg);
         lv_img_set_src(icn, nav_icons[row]);
-        lv_obj_set_size(icn, ICON_SZ, ICON_SZ);
+        lv_img_set_zoom(icn, 341); /* 256 = 100%, 341 = ~133% (36px -> 48px) */
         lv_obj_align(icn, LV_ALIGN_CENTER, 0, 0);
 
         if (active) {
-            /* Cyan tint for active icon */
+            /* Cyan highlight for selected page icon */
             lv_obj_set_style_img_recolor(icn, lv_color_hex(COL_ACTIVE), 0);
             lv_obj_set_style_img_recolor_opa(icn, LV_OPA_COVER, 0);
-            /* Active left accent bar */
+            lv_obj_set_style_img_opa(icn, LV_OPA_COVER, 0);
+
+            /* Full-height side blue accent bar */
             lv_obj_t * accent = lv_obj_create(nav);
             lv_obj_remove_style_all(accent);
             lv_obj_set_size(accent, ACCENT_W, ACCENT_H);
-            lv_obj_set_pos(accent, 0, y_top + (ROW_H - ACCENT_H) / 2);
+            lv_obj_set_pos(accent, 0, y_top);
             lv_obj_set_style_radius(accent, ACCENT_RADIUS, 0);
             lv_obj_set_style_bg_color(accent, lv_color_hex(COL_ACTIVE), 0);
             lv_obj_set_style_bg_opa(accent, 255, 0);
         } else {
-            /* Dim inactive icon to ~40 % */
+            /* Dim unselected icon to ~40% opacity */
             lv_obj_set_style_img_opa(icn, LV_OPA_40, 0);
         }
     }
