@@ -333,8 +333,8 @@ void ui_screenhome_screen_init(void)
     lv_obj_set_style_border_width(ui_Panel_Slider2, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
 
     ui_Slider_Print_Speed2 = lv_slider_create(ui_Panel_Slider2);
-    lv_slider_set_range(ui_Slider_Print_Speed2, 1, 10);
-    lv_slider_set_value(ui_Slider_Print_Speed2, 1, LV_ANIM_OFF);
+    lv_slider_set_range(ui_Slider_Print_Speed2, 1, 12);
+    lv_slider_set_value(ui_Slider_Print_Speed2, 4, LV_ANIM_OFF);
     lv_obj_set_width(ui_Slider_Print_Speed2, 330);
     lv_obj_set_height(ui_Slider_Print_Speed2, 30);
     lv_obj_set_align(ui_Slider_Print_Speed2, LV_ALIGN_CENTER);

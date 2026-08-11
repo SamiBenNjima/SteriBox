@@ -62,10 +62,10 @@ static lv_timer_t * cycle_timer;
 static lv_timer_t * warmup_timer;      /* 3 s pre-lamp safety countdown */
 static uint8_t      warmup_left;
 static lv_timer_t * done_timer;        /* holds "DONE" ~3 s, then arms START */
-static lv_timer_t * pause_timeout_timer; /* 30 s pause timeout before auto-abort */
+static lv_timer_t * pause_timeout_timer; /* 10 s pause timeout before auto-abort */
 
 #define SBX_WARMUP_S 3
-#define SBX_PAUSE_TIMEOUT_MS 30000     /* 30 s max pause window */
+#define SBX_PAUSE_TIMEOUT_MS 10000     /* 10 s max pause window */
 
 /* End-of-cycle result popup (defined below, shown from cycle_stop) */
 static void show_end_popup(bool aborted);
@@ -120,6 +120,11 @@ static uint32_t lamp_remaining_h(uint32_t lamp_seconds)
 {
     uint32_t used_h = lamp_seconds / 3600u;
     return (used_h >= SBX_LAMP_LIFE_HOURS) ? 0u : (SBX_LAMP_LIFE_HOURS - used_h);
+}
+
+static inline uint32_t slider_get_time_s(void)
+{
+    return (uint32_t)lv_slider_get_value(ui_Slider_Print_Speed2) * 15u;
 }
 
 static void set_time_display(uint32_t seconds)
@@ -350,7 +355,7 @@ static void reset_after_done(void)
     set_status("START");
     lv_obj_set_style_text_color(ui_Label1, lv_color_hex(0xFFFFFF), 0);
     set_progress(0);
-    set_time_display((uint32_t)lv_slider_get_value(ui_Slider_Print_Speed2) * 60u);
+    set_time_display(slider_get_time_s());
     state = SBX_STATE_IDLE;
 }
 
@@ -389,8 +394,7 @@ static void cycle_stop(sbx_state_t end_state)
         set_status("START");
         lv_obj_set_style_text_color(ui_Label1, lv_color_hex(0xFFFFFF), 0);
         set_progress(0);
-        set_time_display(cycle_total_s ? cycle_total_s
-                         : (uint32_t)lv_slider_get_value(ui_Slider_Print_Speed2) * 60u);
+        set_time_display(cycle_total_s ? cycle_total_s : slider_get_time_s());
     }
 
     sbx_hal_storage_save(&persist);
@@ -437,17 +441,17 @@ static void cycle_stop(sbx_state_t end_state)
     }
 }
 
-/* 30 s pause timeout callback: aborts cycle if not resumed in time */
+/* 10 s pause timeout callback: aborts cycle if not resumed in time */
 static void pause_timeout_cb(lv_timer_t * t)
 {
     (void)t;
     pause_timeout_timer = NULL;
     if(state == SBX_STATE_PAUSED_DOOR) {
-        cycle_stop(SBX_STATE_IDLE);   /* pause timed out (30 s) -> auto abort */
+        cycle_stop(SBX_STATE_IDLE);   /* pause timed out (10 s) -> auto abort */
     }
 }
 
-/* SAFETY: door opened mid-run/warm-up -> freeze, arm 30 s timeout. */
+/* SAFETY: door opened mid-run/warm-up -> freeze, arm 10 s timeout. */
 static void cycle_pause_door(void)
 {
     lamps_set(false);
@@ -455,7 +459,7 @@ static void cycle_pause_door(void)
     if(warmup_timer)        { lv_timer_del(warmup_timer);        warmup_timer        = NULL; }
     if(pause_timeout_timer) { lv_timer_del(pause_timeout_timer); pause_timeout_timer = NULL; }
 
-    /* Arm 30 s pause timeout to auto-abort if user doesn't resume */
+    /* Arm 10 s pause timeout to auto-abort if user doesn't resume */
     pause_timeout_timer = lv_timer_create(pause_timeout_cb, SBX_PAUSE_TIMEOUT_MS, NULL);
     lv_timer_set_repeat_count(pause_timeout_timer, 1);
 
@@ -544,7 +548,7 @@ static void cycle_begin(bool fresh)
     }
 
     if(fresh) {
-        cycle_total_s   = (uint32_t)lv_slider_get_value(ui_Slider_Print_Speed2) * 60u;
+        cycle_total_s   = slider_get_time_s();
         cycle_elapsed_s = 0;
         chart_reset();
         set_progress(0);
@@ -580,6 +584,15 @@ static void door_monitor(void)
             lv_obj_set_style_text_color(ui_Label1, lv_color_hex(0x22DD88), 0);
         }
     }
+    else if(state == SBX_STATE_IDLE) {
+        if(open) {
+            set_status("DOOR !");
+            lv_obj_set_style_text_color(ui_Label1, lv_color_hex(0xFF3030), 0);
+        } else {
+            set_status("START");
+            lv_obj_set_style_text_color(ui_Label1, lv_color_hex(0xFFFFFF), 0);
+        }
+    }
 }
 
 /*==================================================================
@@ -610,8 +623,8 @@ static void duration_slider_cb(lv_event_t * e)
 {
     if(lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED) return;
     if(state == SBX_STATE_RUNNING) return;
-    /*Show the selected duration as "M:00" in the single readout*/
-    set_time_display((uint32_t)lv_slider_get_value(ui_Slider_Print_Speed2) * 60u);
+    /*Show the selected duration as "M:SS" in the single readout*/
+    set_time_display(slider_get_time_s());
     set_status("START");
     lv_obj_set_style_text_color(ui_Label1, lv_color_hex(0xFFFFFF), 0);
     set_progress(0);
@@ -1527,7 +1540,7 @@ void steribox_app_init(void)
     lv_obj_set_style_text_font(glbl, &lv_font_montserrat_16, 0);
 
     /*Initial time display from the duration slider*/
-    set_time_display((uint32_t)lv_slider_get_value(ui_Slider_Print_Speed2) * 60u);
+    set_time_display(slider_get_time_s());
     set_progress(0);
 
     /*--- Home end-of-cycle result popup ---*/
