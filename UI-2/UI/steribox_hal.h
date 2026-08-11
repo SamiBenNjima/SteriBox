@@ -82,9 +82,10 @@ void sbx_hal_relay_set(sbx_relay_t relay, bool on);
 bool sbx_hal_relay_get(sbx_relay_t relay);
 
 /*------------------------------------------------
- * Buzzer
+ * Buzzer & System State
  *-----------------------------------------------*/
 void sbx_hal_buzzer(sbx_beep_t pattern);
+void sbx_hal_set_system_state(uint8_t state);
 
 /*------------------------------------------------
  * Door sensor (PIR)

@@ -175,6 +175,10 @@ void handle_packet(const sbx_packet_t *p) {
       apply_buzzer(p->data[0]);
       break;
     }
+    case SBX_CMD_SET_STATE: {
+      Serial.printf("  [STATE] pattern/state=%d\n", p->data[0]);
+      break;
+    }
     case SBX_CMD_PING: {
       Serial.println("  [PING] -> sending PONG");
       sbx_packet_t pong = {0};

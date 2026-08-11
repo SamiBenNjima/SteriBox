@@ -357,6 +357,7 @@ static void reset_after_done(void)
     set_progress(0);
     set_time_display(slider_get_time_s());
     state = SBX_STATE_IDLE;
+    sbx_hal_set_system_state((uint8_t)state);
 }
 
 static void done_timer_cb(lv_timer_t * t)
@@ -428,6 +429,7 @@ static void cycle_stop(sbx_state_t end_state)
     lv_obj_clear_state(ui_BTN_Pause_Top1, LV_STATE_CHECKED);
     lock_slider(false);
     state = end_state;
+    sbx_hal_set_system_state((uint8_t)state);
     info_screen_refresh();
 
     /* Announce the result (Terminee / Arretee) on the Home screen */
@@ -467,6 +469,7 @@ static void cycle_pause_door(void)
     set_status("DOOR !");
     lv_obj_set_style_text_color(ui_Label1, lv_color_hex(0xFF3030), 0);
     state = SBX_STATE_PAUSED_DOOR;
+    sbx_hal_set_system_state((uint8_t)state);
 }
 
 static void cycle_tick_cb(lv_timer_t * timer)
@@ -501,6 +504,7 @@ static void cycle_run(void)
     sbx_hal_buzzer(SBX_BEEP_OK);
     if(!cycle_timer) cycle_timer = lv_timer_create(cycle_tick_cb, SBX_CYCLE_TICK_MS, NULL);
     state = SBX_STATE_RUNNING;
+    sbx_hal_set_system_state((uint8_t)state);
 }
 
 /* 3 s safety warm-up: lamps stay OFF while the button counts 3-2-1. */
@@ -559,6 +563,7 @@ static void cycle_begin(bool fresh)
     /* 3 s warm-up countdown shown on the button, lamps OFF */
     warmup_left = SBX_WARMUP_S;
     state = SBX_STATE_WARMUP;
+    sbx_hal_set_system_state((uint8_t)state);
     lv_obj_add_state(ui_BTN_Pause_Top1, LV_STATE_CHECKED);
     char b[8];
     lv_snprintf(b, sizeof(b), "%u", warmup_left);
@@ -1486,6 +1491,7 @@ static void refresh_cb(lv_timer_t * timer)
     usb_icons_refresh();
     clock_refresh();
     door_monitor();
+    sbx_hal_set_system_state((uint8_t)state);
 }
 
 /*==================================================================

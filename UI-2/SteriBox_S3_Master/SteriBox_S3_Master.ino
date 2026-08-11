@@ -91,10 +91,74 @@ static uint32_t lastTelemetry = 0;
 
 static uint8_t  rxBuf[sizeof(sbx_packet_t)];
 static uint8_t  rxIdx = 0;
+static uint8_t  s_system_state = 0;   /* 0=IDLE, 1=WARMUP, 2=RUNNING, 3=PAUSED, 4=DONE, 5=ABORTED */
 
 /* Print buffer — accumulates chunks from SBX_CMD_PRINT packets */
 static char     s_print_buf[2048];
 static uint16_t s_print_pos = 0;
+
+/* ================================================================
+ * RGB NeoPixel Status LED (ESP32-S3 onboard LED_PIN GPIO 48)
+ *   - Cycle fading purple for running cycle
+ *   - Solid RED for door open / error
+ *   - Solid YELLOW for paused / warmup
+ *   - Solid CYAN for done
+ *   - Solid GREEN for ready
+ * ================================================================ */
+static void update_status_led(void)
+{
+    static uint32_t last_update = 0;
+    uint32_t now = millis();
+    if (now - last_update < 20) return; /* 50 Hz refresh */
+    last_update = now;
+
+    /* Hardware safety override: Door open -> Solid RED */
+    if (digitalRead(PIN_DOOR) == HIGH) {
+        neopixelWrite(LED_PIN, 255, 0, 0);
+        return;
+    }
+
+    /* Effective state (running if relays active or state == 2) */
+    uint8_t current_state = s_system_state;
+    if (relay_state[0] || relay_state[1]) {
+        current_state = 2; /* SBX_STATE_RUNNING */
+    }
+
+    switch (current_state) {
+        case 2: { /* SBX_STATE_RUNNING: breathing / fading purple */
+            float phase = (float)(now % 2500) / 2500.0f;
+            float factor = (sinf(phase * 2.0f * 3.14159265f) + 1.0f) / 2.0f; /* 0.0 to 1.0 */
+            float brightness = 0.15f + 0.85f * factor;
+            uint8_t r = (uint8_t)(160.0f * brightness);
+            uint8_t g = 0;
+            uint8_t b = (uint8_t)(255.0f * brightness);
+            neopixelWrite(LED_PIN, r, g, b);
+            break;
+        }
+        case 1: { /* SBX_STATE_WARMUP: solid yellow / orange */
+            neopixelWrite(LED_PIN, 255, 140, 0);
+            break;
+        }
+        case 3: { /* SBX_STATE_PAUSED_DOOR: solid yellow */
+            neopixelWrite(LED_PIN, 255, 200, 0);
+            break;
+        }
+        case 4: { /* SBX_STATE_DONE: solid cyan */
+            neopixelWrite(LED_PIN, 0, 220, 255);
+            break;
+        }
+        case 5: { /* SBX_STATE_ABORTED_DOOR: solid red */
+            neopixelWrite(LED_PIN, 255, 0, 0);
+            break;
+        }
+        case 0:   /* SBX_STATE_IDLE */
+        default: {
+            /* Ready: solid green */
+            neopixelWrite(LED_PIN, 0, 200, 0);
+            break;
+        }
+    }
+}
 
 /* ================================================================
  * LEDC helpers — compatible with both ESP32 Arduino 2.x and 3.x
@@ -229,7 +293,6 @@ void handle_packet(const sbx_packet_t *p)
         Serial.println("[RX] checksum FAIL");
         return;
     }
-    blink(1);
     Serial.printf("[RX] type=0x%02X (checksum OK)\n", p->type);
 
     switch (p->type) {
@@ -248,6 +311,11 @@ void handle_packet(const sbx_packet_t *p)
         case SBX_CMD_SET_BUZZER:
             Serial.printf("  [BUZZER] pattern=%d\n", p->data[0]);
             apply_buzzer(p->data[0]);
+            break;
+
+        case SBX_CMD_SET_STATE:
+            s_system_state = p->data[0];
+            Serial.printf("  [STATE] system_state=%d\n", s_system_state);
             break;
 
         case SBX_CMD_PING: {
@@ -373,9 +441,9 @@ static void usb_host_task(void)
  * ================================================================ */
 void setup(void)
 {
-    /* Onboard LED */
+    /* Onboard RGB NeoPixel LED — default solid green (Ready) */
     pinMode(LED_PIN, OUTPUT);
-    digitalWrite(LED_PIN, LOW);
+    neopixelWrite(LED_PIN, 0, 200, 0);
 
     /* Relays — active LOW (HIGH = OFF at startup) */
     pinMode(PIN_RELAY1, OUTPUT); digitalWrite(PIN_RELAY1, HIGH);
@@ -492,4 +560,7 @@ void loop(void)
 #if SBX_USB_OTG_ENABLED
     usb_host_task();
 #endif
+
+    /* Update onboard NeoPixel RGB status LED */
+    update_status_led();
 }

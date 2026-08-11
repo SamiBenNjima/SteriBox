@@ -22,6 +22,7 @@ void sbx_uart_task(void);   /* call every loop(), non-blocking */
 /* commands -> master (fire and forget) */
 void sbx_uart_send_relay(uint8_t relay_id, bool on);
 void sbx_uart_send_buzzer(uint8_t pattern);
+void sbx_uart_send_state(uint8_t state);
 
 /* cached telemetry <- master */
 bool sbx_uart_is_linked(void);        /* true if telemetry seen in last 2s */

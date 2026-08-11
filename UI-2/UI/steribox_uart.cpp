@@ -99,6 +99,14 @@ void sbx_uart_send_buzzer(uint8_t pattern)
     send_packet(&p);
 }
 
+void sbx_uart_send_state(uint8_t state)
+{
+    sbx_packet_t p = {0};
+    p.type    = SBX_CMD_SET_STATE;
+    p.data[0] = state;
+    send_packet(&p);
+}
+
 /* Send a text document to the master for printing on the USB-OTG printer.
  * Text is streamed in 4-byte payloads; a zero-length packet terminates.
  * SBX_CMD_PRINT is defined as 0x04 in sbx_uart_protocol.h.           */

@@ -310,6 +310,13 @@ bool sbx_hal_relay_get(sbx_relay_t relay) { return relay_state[relay]; }
  *=================================================================*/
 void sbx_hal_buzzer(sbx_beep_t pattern) { sbx_uart_send_buzzer((uint8_t)pattern); }
 
+void sbx_hal_set_system_state(uint8_t state)
+{
+#if SBX_MASTER_UART_ENABLED
+    sbx_uart_send_state(state);
+#endif
+}
+
 /*==================================================================
  * Door / PIR  (physically on the GPIO master -> read from telemetry cache)
  * Non-blocking: returns the last value received, "closed" until the first

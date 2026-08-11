@@ -33,6 +33,7 @@ enum {
     SBX_CMD_SET_BUZZER  = 0x02,  /* data0=pattern (sbx_beep_t)           */
     SBX_CMD_PING        = 0x03,
     SBX_CMD_PRINT       = 0x04,  /* data0..3=4 chars of text; zero-payload=end */
+    SBX_CMD_SET_STATE   = 0x05,  /* data0=system state (sbx_state_t)     */
 
     /* master -> slave (telemetry/replies) */
     SBX_MSG_TELEMETRY   = 0x10,  /* data0=flags, data1..2=temp*10 (i16 LE), data3=hum% */
