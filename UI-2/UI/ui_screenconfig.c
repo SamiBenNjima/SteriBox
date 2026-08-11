@@ -93,8 +93,11 @@ static lv_obj_t * ui_cfg_dot1 = NULL;
 /* ── event callbacks ────────────────────────────────────────────── */
 void ui_event_screenconfig(lv_event_t * e)
 {
-    if(lv_event_get_code(e) == LV_EVENT_SCREEN_LOADED)
+    if(lv_event_get_code(e) == LV_EVENT_SCREEN_LOADED) {
         _ui_flag_modify(ui_popup, LV_OBJ_FLAG_HIDDEN, _UI_MODIFY_FLAG_REMOVE);
+        if(ui_Panel2) lv_obj_set_y(ui_Panel2, 0); /* Always spawn centered */
+        if(ui_Keyboard1) _ui_flag_modify(ui_Keyboard1, LV_OBJ_FLAG_HIDDEN, _UI_MODIFY_FLAG_ADD);
+    }
 }
 
 void ui_event_BTN_Menu_Setting_S3(lv_event_t * e)
@@ -113,15 +116,21 @@ void ui_event_BTN_Menu_Move_S7(lv_event_t * e)
 
 void ui_event_Panel2(lv_event_t * e)
 {
-    if(lv_event_get_code(e) == LV_EVENT_PRESSED)
-        _ui_flag_modify(ui_Keyboard1, LV_OBJ_FLAG_HIDDEN, _UI_MODIFY_FLAG_ADD);
+    /* Tapping outside the text box (either on dark backdrop overlay or panel container) dismisses keyboard */
+    if(lv_event_get_code(e) == LV_EVENT_PRESSED || lv_event_get_code(e) == LV_EVENT_CLICKED) {
+        if(ui_Keyboard1) _ui_flag_modify(ui_Keyboard1, LV_OBJ_FLAG_HIDDEN, _UI_MODIFY_FLAG_ADD);
+        if(ui_Panel2) lv_obj_set_y(ui_Panel2, 0); /* Return to exact vertical center */
+    }
 }
 
 void ui_event_pwd(lv_event_t * e)
 {
-    if(lv_event_get_code(e) == LV_EVENT_FOCUSED) {
+    lv_event_code_t code = lv_event_get_code(e);
+    if(code == LV_EVENT_FOCUSED || code == LV_EVENT_CLICKED) {
         _ui_keyboard_set_target(ui_Keyboard1, ui_pwd);
+        lv_keyboard_set_mode(ui_Keyboard1, LV_KEYBOARD_MODE_NUMBER);
         _ui_flag_modify(ui_Keyboard1, LV_OBJ_FLAG_HIDDEN, _UI_MODIFY_FLAG_REMOVE);
+        if(ui_Panel2) lv_obj_set_y(ui_Panel2, -110); /* Shift popup higher to clear onscreen keyboard */
     }
 }
 
@@ -353,14 +362,16 @@ void ui_screenconfig_screen_init(void)
     lv_obj_set_size(ui_popup, 800, 480);
     lv_obj_set_align(ui_popup, LV_ALIGN_CENTER);
     lv_obj_add_flag(ui_popup, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_clear_flag(ui_popup, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(ui_popup, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_clear_flag(ui_popup, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_bg_color(ui_popup, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_bg_opa(ui_popup, 170, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_add_event_cb(ui_popup, ui_event_Panel2, LV_EVENT_ALL, NULL);
 
     ui_Panel2 = lv_obj_create(ui_popup);
     lv_obj_set_size(ui_Panel2, 440, 210);
     lv_obj_set_align(ui_Panel2, LV_ALIGN_CENTER);
-    lv_obj_set_y(ui_Panel2, -70);
+    lv_obj_set_y(ui_Panel2, 0);  /* Centered in the middle of the popup by default */
     lv_obj_clear_flag(ui_Panel2, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_bg_color(ui_Panel2,     lv_color_hex(0x191D26), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_bg_opa(ui_Panel2,       255,                     LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -420,6 +431,7 @@ void ui_screenconfig_screen_init(void)
     ui_Keyboard1 = lv_keyboard_create(ui_popup);
     lv_obj_set_size(ui_Keyboard1, 800, lv_pct(40));
     lv_obj_set_align(ui_Keyboard1, LV_ALIGN_BOTTOM_LEFT);
+    lv_keyboard_set_mode(ui_Keyboard1, LV_KEYBOARD_MODE_NUMBER); /* Default to number layout active first */
     lv_obj_add_flag(ui_Keyboard1, LV_OBJ_FLAG_HIDDEN);
 
     lv_obj_add_event_cb(ui_Panel2,  ui_event_Panel2,  LV_EVENT_ALL, NULL);
