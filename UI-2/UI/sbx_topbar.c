@@ -23,52 +23,48 @@ LV_IMG_DECLARE(ui_img_icn_usb2_png);   /* 28×28 USB drive icon */
 LV_IMG_DECLARE(ui_img_icn_pc_png);     /* existing printer icon */
 
 /* Icon horizontal spacing from the right edge of the header -------------- */
-#define ICN_RIGHT_PAD   8   /* px from right edge to printer icon  */
-#define ICN_STEP        40  /* px between icon centres             */
+#define ICN_RIGHT_PAD   16  /* px from right edge to rightmost icon */
+#define ICN_STEP        42  /* px between icon centres              */
 
 /* colour constants */
-#define COL_ACTIVE    0x00D2FF   /* cyan-white — device present   */
-#define COL_INACTIVE  0x3A4558  /* muted grey — device absent    */
-#define COL_SD_OK     0x00E05A  /* green — SD card mounted       */
-#define COL_PRINTER   0xC2CBDE  /* light — printer detected      */
+#define COL_ACTIVE    0x00D2FF   /* cyan — device present/mounted */
+#define COL_INACTIVE  0x4A587A   /* muted slate grey — device absent */
+#define COL_SD_OK     0x00E05A   /* green — SD card mounted       */
 
 /* -------------------------------------------------------------------------
  * sbx_topbar_build
- * Adds three icons inside the header panel, right-anchored as a group.
- * Layout (right→left):  [Printer] [USB] [SD]
- *           offsets:     -8        -48   -88  (from right edge)
+ * Adds two status icons inside the header panel, right-anchored as a group.
+ * Layout (right→left):  [USB] [SD]
+ *           offsets:     -16   -58  (from right edge)
  * -------------------------------------------------------------------------*/
 void sbx_topbar_build(lv_obj_t * header, sbx_topbar_icons_t * icons)
 {
-    /* Printer icon (rightmost -8) */
-    icons->icn_printer = lv_img_create(header);
-    lv_img_set_src(icons->icn_printer, &ui_img_icn_pc_png);
-    lv_obj_set_align(icons->icn_printer, LV_ALIGN_RIGHT_MID);
-    lv_obj_set_x(icons->icn_printer, -ICN_RIGHT_PAD);
-    lv_obj_set_y(icons->icn_printer, 0);
-    lv_obj_add_flag(icons->icn_printer, LV_OBJ_FLAG_ADV_HITTEST);
-    lv_obj_set_style_img_recolor(icons->icn_printer, lv_color_hex(COL_INACTIVE), 0);
-    lv_obj_set_style_img_recolor_opa(icons->icn_printer, 255, 0);
+    /* Printer icon — removed as requested */
+    icons->icn_printer = NULL;
 
-    /* USB drive icon (-48) */
+    /* USB drive icon (rightmost -16) */
     icons->icn_usb = lv_img_create(header);
     lv_img_set_src(icons->icn_usb, &ui_img_icn_usb2_png);
+    lv_img_set_zoom(icons->icn_usb, 180); /* scaled down to ~25px */
     lv_obj_set_align(icons->icn_usb, LV_ALIGN_RIGHT_MID);
-    lv_obj_set_x(icons->icn_usb, -(ICN_RIGHT_PAD + ICN_STEP));
+    lv_obj_set_x(icons->icn_usb, -ICN_RIGHT_PAD);
     lv_obj_set_y(icons->icn_usb, 0);
-    lv_obj_add_flag(icons->icn_usb, LV_OBJ_FLAG_ADV_HITTEST);
+    lv_obj_clear_flag(icons->icn_usb, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_img_recolor(icons->icn_usb, lv_color_hex(COL_INACTIVE), 0);
-    lv_obj_set_style_img_recolor_opa(icons->icn_usb, 255, 0);
+    lv_obj_set_style_img_recolor_opa(icons->icn_usb, LV_OPA_COVER, 0);
+    lv_obj_set_style_img_opa(icons->icn_usb, LV_OPA_50, 0);
 
-    /* SD card icon (-88) */
+    /* SD card icon (-58) */
     icons->icn_sd = lv_img_create(header);
     lv_img_set_src(icons->icn_sd, &ui_img_icn_sd_png);
+    lv_img_set_zoom(icons->icn_sd, 180); /* scaled down to ~25px */
     lv_obj_set_align(icons->icn_sd, LV_ALIGN_RIGHT_MID);
-    lv_obj_set_x(icons->icn_sd, -(ICN_RIGHT_PAD + 2 * ICN_STEP));
+    lv_obj_set_x(icons->icn_sd, -(ICN_RIGHT_PAD + ICN_STEP));
     lv_obj_set_y(icons->icn_sd, 0);
-    lv_obj_add_flag(icons->icn_sd, LV_OBJ_FLAG_ADV_HITTEST);
+    lv_obj_clear_flag(icons->icn_sd, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_img_recolor(icons->icn_sd, lv_color_hex(COL_INACTIVE), 0);
-    lv_obj_set_style_img_recolor_opa(icons->icn_sd, 255, 0);
+    lv_obj_set_style_img_recolor_opa(icons->icn_sd, LV_OPA_COVER, 0);
+    lv_obj_set_style_img_opa(icons->icn_sd, LV_OPA_50, 0);
 }
 
 /* -------------------------------------------------------------------------
@@ -84,7 +80,8 @@ void sbx_topbar_refresh(const sbx_topbar_icons_t * icons)
     if (icons->icn_sd) {
         uint32_t col = sd ? COL_SD_OK : COL_INACTIVE;
         lv_obj_set_style_img_recolor(icons->icn_sd, lv_color_hex(col), 0);
-        lv_obj_set_style_img_recolor_opa(icons->icn_sd, 255, 0);
+        lv_obj_set_style_img_recolor_opa(icons->icn_sd, LV_OPA_COVER, 0);
+        lv_obj_set_style_img_opa(icons->icn_sd, sd ? LV_OPA_COVER : LV_OPA_50, 0);
     }
 
     /* USB drive (SD card mounted = USB drive is the SD, same API) */
@@ -92,15 +89,8 @@ void sbx_topbar_refresh(const sbx_topbar_icons_t * icons)
     if (icons->icn_usb) {
         uint32_t col = usb ? COL_ACTIVE : COL_INACTIVE;
         lv_obj_set_style_img_recolor(icons->icn_usb, lv_color_hex(col), 0);
-        lv_obj_set_style_img_recolor_opa(icons->icn_usb, 255, 0);
-    }
-
-    /* Printer */
-    bool printer = sbx_hal_printer_present();
-    if (icons->icn_printer) {
-        uint32_t col = printer ? COL_PRINTER : COL_INACTIVE;
-        lv_obj_set_style_img_recolor(icons->icn_printer, lv_color_hex(col), 0);
-        lv_obj_set_style_img_recolor_opa(icons->icn_printer, 255, 0);
+        lv_obj_set_style_img_recolor_opa(icons->icn_usb, LV_OPA_COVER, 0);
+        lv_obj_set_style_img_opa(icons->icn_usb, usb ? LV_OPA_COVER : LV_OPA_50, 0);
     }
 }
 

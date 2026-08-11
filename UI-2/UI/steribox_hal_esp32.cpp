@@ -334,8 +334,33 @@ bool sbx_hal_read_env(float * t, float * h)
 /*==================================================================
  * SD-card status & structured logging
  *=================================================================*/
-bool sbx_hal_sd_present(void)  { return sd_ok; }
-bool sbx_hal_usb_present(void) { return sd_ok; }   /* alias */
+bool sbx_hal_sd_present(void)
+{
+    static uint32_t last_check = 0;
+    uint32_t now = millis();
+    if (now - last_check >= 2000 || last_check == 0) {
+        last_check = now;
+        if (sd_ok) {
+            if (SD.cardType() == CARD_NONE) {
+                sd_ok = false;
+                SD.end();
+                Serial.println("[SD] Card removed!");
+            }
+        } else {
+            if (SD.begin(SD_CS)) {
+                sd_ok = true;
+                SD.mkdir("/steribox");
+                Serial.println("[SD] Card inserted & mounted OK!");
+            }
+        }
+    }
+    return sd_ok;
+}
+
+bool sbx_hal_usb_present(void)
+{
+    return sbx_hal_printer_present();
+}
 
 /* ---- sbx_hal_log_event ------------------------------------------
  * Appends ONE timestamped CSV row to /steribox/syslog.csv.

@@ -60,6 +60,8 @@ extern lv_obj_t * ui____initial_actions0;
 LV_IMG_DECLARE(ui_img_icn_wifi_png);    // assets/icn_wifi.png
 LV_IMG_DECLARE(ui_img_icn_pc_png);    // assets/icn_pc.png
 LV_IMG_DECLARE(ui_img_icn_usb_png);    // assets/icn_usb.png
+LV_IMG_DECLARE(ui_img_icn_usb2_png);   // icons/usb.png
+LV_IMG_DECLARE(ui_img_icn_sd_png);     // icons/sd.png
 LV_IMG_DECLARE(ui_img_btn_print_v2_png);    // assets/btn_print_v2.png
 LV_IMG_DECLARE(ui_img_btn_setting_png);    // assets/btn_setting.png
 LV_IMG_DECLARE(ui_img_btn_main_off_png);    // assets/btn_main_off.png

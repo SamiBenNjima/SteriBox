@@ -722,7 +722,7 @@ static void end_print_cb(lv_event_t * e)
     if(lv_event_get_code(e) != LV_EVENT_CLICKED) return;
     char report[640];
     build_report(report, sizeof(report), NULL);
-    sbx_hal_buzzer(sbx_hal_usb_print(report) ? SBX_BEEP_OK : SBX_BEEP_WARN);
+    sbx_try_print(ui_screenhome, report);
 }
 
 static void end_cont_cb(lv_event_t * e)
