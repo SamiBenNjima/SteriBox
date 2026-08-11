@@ -27,7 +27,8 @@ LV_IMG_DECLARE(ui_img_icn_config_png);
 #define ACCENT_H        160   /* Full height of the button slot */
 #define ACCENT_RADIUS   0   /* Clean full-edge bar */
 
-/* Icon tint colours */
+/* Nav bar colors */
+#define SBX_COL_NAV_BG  0x1A2233   /* Original dark sidebar background */
 #define COL_ACTIVE      0x00D2FF   /* cyan — matches SBX_COL_ACCENT */
 
 static const lv_img_dsc_t * const nav_icons[3] = {
@@ -44,7 +45,7 @@ lv_obj_t * sbx_navbar_build(lv_obj_t * screen, int active_row)
     lv_obj_set_size(nav, NAV_W, NAV_H);
     lv_obj_set_pos(nav, 0, 0);
     lv_obj_clear_flag(nav, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_bg_color(nav, lv_color_hex(SBX_COL_BG), 0);
+    lv_obj_set_style_bg_color(nav, lv_color_hex(SBX_COL_NAV_BG), 0);
     lv_obj_set_style_bg_opa(nav, 255, 0);
 
     /* Thin right-edge separator line */
@@ -65,7 +66,7 @@ lv_obj_t * sbx_navbar_build(lv_obj_t * screen, int active_row)
         lv_obj_set_size(row_bg, NAV_W, ROW_H);
         lv_obj_set_pos(row_bg, 0, y_top);
         lv_obj_clear_flag(row_bg, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
-        lv_obj_set_style_bg_color(row_bg, lv_color_hex(SBX_COL_BG), 0);
+        lv_obj_set_style_bg_color(row_bg, lv_color_hex(SBX_COL_NAV_BG), 0);
         lv_obj_set_style_bg_opa(row_bg, 255, 0);
 
         /* ── Icon image (scaled to ~48x48 using zoom = 341) ────────── */
