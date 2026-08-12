@@ -240,9 +240,59 @@ static uint32_t lamp_remaining_h(uint32_t lamp_seconds) {
   return (used_h >= SBX_LAMP_LIFE_HOURS) ? 0u : (SBX_LAMP_LIFE_HOURS - used_h);
 }
 
-/* Slider range is 1..12 -> 5 s .. 1 min (see commit "time/slider : 1min max"). */
+/*==================================================================
+ * Duration picker
+ *
+ * The slider is CONTINUOUS - 1000 raw positions across 330 px, so about
+ * three raw units per pixel. There is no step, which is what makes it
+ * read as an analogue control rather than a 12-notch selector.
+ *
+ * The raw position is mapped through a power curve so most of the travel
+ * is spent on SHORT cycles, where 1 s resolution actually matters, while
+ * the top of the range still reaches 4 minutes:
+ *
+ *   t(x) = TMIN + (TMAX - TMIN) * (x / RAW_MAX)^GAMMA
+ *
+ * With GAMMA = 2.2 the travel lands roughly on:
+ *   0%  ->   5 s     25% ->  16 s     50% ->  56 s
+ *  75%  -> 130 s    100% -> 240 s
+ * so the first half of the slider covers 5..56 s and the last quarter
+ * carries the whole 130..240 s span.
+ *=================================================================*/
+#define SBX_DUR_RAW_MAX 1000
+#define SBX_DUR_MIN_S 5u
+#define SBX_DUR_MAX_S 240u /* 4 minutes */
+#define SBX_DUR_GAMMA 2.2f
+#define SBX_DUR_DEFAULT_S 30u
+
+/* Defined with the dose model below; needed by the progress readout. */
+static float uvc_dose_from_eff(float eff_s);
+
+static uint32_t slider_raw_to_seconds(int32_t raw) {
+  if (raw < 0)
+    raw = 0;
+  if (raw > SBX_DUR_RAW_MAX)
+    raw = SBX_DUR_RAW_MAX;
+  float f = powf((float)raw / (float)SBX_DUR_RAW_MAX, SBX_DUR_GAMMA);
+  float s = (float)SBX_DUR_MIN_S +
+            ((float)SBX_DUR_MAX_S - (float)SBX_DUR_MIN_S) * f;
+  return (uint32_t)(s + 0.5f);
+}
+
+/** Inverse of the curve: raw knob position that yields `seconds`. */
+static int32_t slider_seconds_to_raw(uint32_t seconds) {
+  if (seconds <= SBX_DUR_MIN_S)
+    return 0;
+  if (seconds >= SBX_DUR_MAX_S)
+    return SBX_DUR_RAW_MAX;
+  float f = ((float)seconds - (float)SBX_DUR_MIN_S) /
+            ((float)SBX_DUR_MAX_S - (float)SBX_DUR_MIN_S);
+  return (int32_t)((float)SBX_DUR_RAW_MAX * powf(f, 1.0f / SBX_DUR_GAMMA) +
+                   0.5f);
+}
+
 static inline uint32_t slider_get_time_s(void) {
-  return (uint32_t)lv_slider_get_value(ui_Slider_Print_Speed2) * 5u;
+  return slider_raw_to_seconds(lv_slider_get_value(ui_Slider_Print_Speed2));
 }
 
 static void set_time_display(uint32_t seconds) {
@@ -252,11 +302,45 @@ static void set_time_display(uint32_t seconds) {
   lv_label_set_text(ui_Label_Time_1, buf); /* single "M:SS" readout */
 }
 
-static void set_progress(uint32_t pct) {
-  char buf[8];
-  lv_slider_set_value(ui_Slider_Print_View1, (int32_t)pct, LV_ANIM_ON);
-  lv_snprintf(buf, sizeof(buf), "%u%%", (unsigned)pct);
+/*==================================================================
+ * Progress readout (the big cyan number on the print view)
+ *
+ * Tapping it toggles between cycle completion and the UV-C dose
+ * delivered so far. Two different questions - "how long until I can
+ * open it" and "how much dose has the load actually received" - share
+ * one spot, because they are never both needed at a glance.
+ *=================================================================*/
+static bool progress_show_dose; /* false = percentage, true = mJ/cm2 */
+static uint32_t progress_pct;
+
+static void progress_label_refresh(void) {
+  char buf[20];
+  if (progress_show_dose) {
+    /* lv_snprintf has no float support in this build - decompose by hand */
+    float d = uvc_dose_from_eff(cycle_eff_s);
+    if (d < 100.0f)
+      lv_snprintf(buf, sizeof(buf), "%d.%d mJ/cm2", (int)d,
+                  (int)(d * 10.0f) % 10);
+    else
+      lv_snprintf(buf, sizeof(buf), "%d mJ/cm2", (int)(d + 0.5f));
+  } else {
+    lv_snprintf(buf, sizeof(buf), "%u%%", (unsigned)progress_pct);
+  }
   lv_label_set_text(ui_Number_Print1, buf);
+}
+
+static void set_progress(uint32_t pct) {
+  progress_pct = pct;
+  lv_slider_set_value(ui_Slider_Print_View1, (int32_t)pct, LV_ANIM_ON);
+  progress_label_refresh();
+}
+
+static void progress_toggle_cb(lv_event_t *e) {
+  if (lv_event_get_code(e) != LV_EVENT_CLICKED)
+    return;
+  progress_show_dose = !progress_show_dose;
+  progress_label_refresh();
+  sbx_hal_buzzer(SBX_BEEP_KEY);
 }
 
 /*==================================================================
@@ -833,6 +917,11 @@ static void warmup_tick_cb(lv_timer_t *t) {
   dose_tick();
   cycle_warm_s++; /* preheat seconds actually performed, resumes included */
 
+  /* Preheat dose is real dose: keep the readout live in mJ/cm2 mode even
+   * though cycle progress is still 0%. */
+  if (progress_show_dose)
+    progress_label_refresh();
+
   if (warmup_left > 1) {
     warmup_left--;
     char b[12];
@@ -968,26 +1057,56 @@ static void start_btn_cb(lv_event_t *e) {
   }
 }
 
-static void duration_slider_cb(lv_event_t *e) {
-  if (lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED)
-    return;
-  if (state == SBX_STATE_RUNNING)
-    return;
-
-  uint32_t sel = slider_get_time_s();
-  set_time_display(sel);
-
-  /* Orange readout when the selected run time cannot reach 4 log on
-   * the most resistant ENABLED target (preheat dose included). */
+/* Colour the time readout orange when the selected run time cannot reach
+ * 4 log on the most resistant ENABLED target (preheat dose included). */
+static void duration_warn_refresh(void) {
   uint32_t need = cycle_time_for_log(4.0f);
-  lv_obj_set_style_text_color(
-      ui_Label_Time_1,
-      (sel < need) ? lv_color_hex(0xFF8800) : lv_color_hex(0xFFFFFF), 0);
+  lv_obj_set_style_text_color(ui_Label_Time_1,
+                              (slider_get_time_s() < need)
+                                  ? lv_color_hex(0xFF8800)
+                                  : lv_color_hex(0xFFFFFF),
+                              0);
+}
 
-  set_status("START");
-  lv_obj_set_style_text_color(ui_Label1, lv_color_hex(0xFFFFFF), 0);
-  set_progress(0);
-  sbx_hal_buzzer(SBX_BEEP_KEY);
+/* True once the value has moved during the current touch, so the
+ * confirmation beep only fires when a duration was really chosen. */
+static bool duration_picked;
+
+static void duration_slider_cb(lv_event_t *e) {
+  lv_event_code_t code = lv_event_get_code(e);
+  if (state == SBX_STATE_RUNNING || state == SBX_STATE_WARMUP)
+    return;
+
+  switch (code) {
+  case LV_EVENT_PRESSED:
+    duration_picked = false;
+    /* Clear any leftover DONE / result state as soon as the operator
+     * starts choosing again - once per touch, not once per pixel. */
+    set_status("START");
+    lv_obj_set_style_text_color(ui_Label1, lv_color_hex(0xFFFFFF), 0);
+    set_progress(0);
+    break;
+
+  case LV_EVENT_VALUE_CHANGED:
+    /* Continuous slider: this fires on every pixel of the drag, so it
+     * stays cheap - display only, and NO beep. */
+    set_time_display(slider_get_time_s());
+    duration_warn_refresh();
+    duration_picked = true;
+    break;
+
+  case LV_EVENT_RELEASED:
+  case LV_EVENT_PRESS_LOST:
+    /* Finger up on a value that actually moved: confirm it. */
+    if (duration_picked) {
+      duration_picked = false;
+      sbx_hal_buzzer(SBX_BEEP_KEY);
+    }
+    break;
+
+  default:
+    break;
+  }
 }
 
 /*==================================================================
@@ -1366,14 +1485,8 @@ static void org_toggle_cb(lv_event_t *e) {
   org_redraw();
 
   /* Enabling a resistant target can invalidate the selected duration */
-  if (state == SBX_STATE_IDLE) {
-    uint32_t need = cycle_time_for_log(4.0f);
-    lv_obj_set_style_text_color(ui_Label_Time_1,
-                                (slider_get_time_s() < need)
-                                    ? lv_color_hex(0xFF8800)
-                                    : lv_color_hex(0xFFFFFF),
-                                0);
-  }
+  if (state == SBX_STATE_IDLE)
+    duration_warn_refresh();
 
   /* If the result popup is open, refresh its organism list too */
   if (end_overlay && !lv_obj_has_flag(end_overlay, LV_OBJ_FLAG_HIDDEN))
@@ -2020,12 +2133,32 @@ void steribox_app_init(void) {
   /*--- Home screen ---*/
   /*Progress slider is display-only*/
   lv_obj_clear_flag(ui_Slider_Print_View1, LV_OBJ_FLAG_CLICKABLE);
+  /* The generated handlers stamp the RAW slider value into the two
+   * readouts. Both labels are owned by this file now (M:SS for the
+   * duration, % or mJ/cm2 for the progress), so drop them - otherwise a
+   * 0..1000 duration slider would flash "437" instead of "1:23". */
+  lv_obj_remove_event_cb(ui_Slider_Print_View1, ui_event_Slider_Print_View1);
+  lv_obj_remove_event_cb(ui_Slider_Print_Speed2, ui_event_Slider_Print_Speed2);
   /*Settings nav icon: generated code wrongly targets the Info screen*/
   lv_obj_remove_event_cb(ui_BTN_Menu_Move_S1, ui_event_BTN_Menu_Move_S1);
   lv_obj_add_event_cb(ui_BTN_Menu_Move_S1, home_settings_cb, LV_EVENT_ALL,
                       NULL);
   lv_obj_add_event_cb(ui_BTN_Pause_Top1, start_btn_cb, LV_EVENT_ALL, NULL);
+
+  /* Duration picker: continuous 0..1000 raw positions mapped through the
+   * power curve in slider_raw_to_seconds() -> 5 s .. 4 min. */
+  lv_slider_set_range(ui_Slider_Print_Speed2, 0, SBX_DUR_RAW_MAX);
+  lv_slider_set_value(ui_Slider_Print_Speed2,
+                      slider_seconds_to_raw(SBX_DUR_DEFAULT_S), LV_ANIM_OFF);
   lv_obj_add_event_cb(ui_Slider_Print_Speed2, duration_slider_cb, LV_EVENT_ALL,
+                      NULL);
+
+  /* Progress readout: tap to swap % <-> delivered dose. The label is a
+   * child of the (non-clickable) progress slider, so it gets the press;
+   * the extended click area makes it a comfortable touch target. */
+  lv_obj_add_flag(ui_Number_Print1, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_set_ext_click_area(ui_Number_Print1, 24);
+  lv_obj_add_event_cb(ui_Number_Print1, progress_toggle_cb, LV_EVENT_CLICKED,
                       NULL);
 
   /*Chart: create one line series per organism, bound to org_data[o]*/
@@ -2058,14 +2191,7 @@ void steribox_app_init(void) {
   /*Initial time display from the duration slider*/
   set_time_display(slider_get_time_s());
   set_progress(0);
-  {
-    uint32_t need = cycle_time_for_log(4.0f);
-    lv_obj_set_style_text_color(ui_Label_Time_1,
-                                (slider_get_time_s() < need)
-                                    ? lv_color_hex(0xFF8800)
-                                    : lv_color_hex(0xFFFFFF),
-                                0);
-  }
+  duration_warn_refresh();
 
   /*--- Home end-of-cycle result popup ---*/
   end_popup_create();
