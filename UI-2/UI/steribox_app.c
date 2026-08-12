@@ -1611,23 +1611,28 @@ static void refresh_lamp_arcs(void) {
 
 static void confirm_yes_cb(lv_event_t * e)
 {
-    if(lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+    lv_event_code_t code = lv_event_get_code(e);
+    if(code != LV_EVENT_CLICKED && code != LV_EVENT_READY) return;
+
     const char * txt = ui_confirm_ta ? lv_textarea_get_text(ui_confirm_ta) : "0";
     int hours = atoi(txt);
     if(hours < 0) hours = 0;
     if(hours > (int)SBX_LAMP_LIFE_HOURS) hours = (int)SBX_LAMP_LIFE_HOURS;
     uint32_t new_secs = (uint32_t)hours * 3600u;
 
+    char detail_buf[32];
     if(lamp_to_reset == 1) {
         persist.lamp1_seconds = new_secs;
         sbx_hal_storage_save(&persist);
-        sbx_hal_log_event("CFG_LAMP_EDIT", "lamp=1");
+        lv_snprintf(detail_buf, sizeof(detail_buf), "lamp=1,hrs=%d", hours);
+        sbx_hal_log_event("CFG_LAMP_EDIT", detail_buf);
         sbx_hal_buzzer(SBX_BEEP_OK);
     }
     else if(lamp_to_reset == 2) {
         persist.lamp2_seconds = new_secs;
         sbx_hal_storage_save(&persist);
-        sbx_hal_log_event("CFG_LAMP_EDIT", "lamp=2");
+        lv_snprintf(detail_buf, sizeof(detail_buf), "lamp=2,hrs=%d", hours);
+        sbx_hal_log_event("CFG_LAMP_EDIT", detail_buf);
         sbx_hal_buzzer(SBX_BEEP_OK);
     }
     lamp_to_reset = 0;
