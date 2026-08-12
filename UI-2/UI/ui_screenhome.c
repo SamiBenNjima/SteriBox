@@ -260,11 +260,11 @@ void ui_screenhome_screen_init(void)
     lv_obj_set_width(ui_Number_Print1, LV_SIZE_CONTENT);
     lv_obj_set_height(ui_Number_Print1, LV_SIZE_CONTENT);
     lv_obj_set_x(ui_Number_Print1, 0);
-    lv_obj_set_y(ui_Number_Print1, -34);
-    lv_obj_set_align(ui_Number_Print1, LV_ALIGN_BOTTOM_MID);
+    lv_obj_set_y(ui_Number_Print1, 0);
+    lv_obj_set_align(ui_Number_Print1, LV_ALIGN_CENTER);
     lv_label_set_text(ui_Number_Print1, "0%");
     lv_obj_set_style_text_color(ui_Number_Print1, lv_color_hex(0x00D2FF), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(ui_Number_Print1, &lv_font_montserrat_36, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(ui_Number_Print1, &ui_font_timefont, LV_PART_MAIN | LV_STATE_DEFAULT);
 
     /* Time display - top right */
     ui_Display_Time_S2 = lv_obj_create(ui_Panel8);
@@ -284,22 +284,16 @@ void ui_screenhome_screen_init(void)
     lv_obj_set_style_pad_all(ui_Display_Time_S2, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
 
     ui_Label_Printing_Time_4 = lv_label_create(ui_Display_Time_S2);
-    lv_obj_set_width(ui_Label_Printing_Time_4, LV_SIZE_CONTENT);
-    lv_obj_set_height(ui_Label_Printing_Time_4, LV_SIZE_CONTENT);
-    lv_obj_set_x(ui_Label_Printing_Time_4, -8);
-    lv_obj_set_y(ui_Label_Printing_Time_4, 6);
-    lv_obj_set_align(ui_Label_Printing_Time_4, LV_ALIGN_TOP_MID);
-    lv_label_set_text(ui_Label_Printing_Time_4, "Time");
-    lv_obj_set_style_text_color(ui_Label_Printing_Time_4, lv_color_hex(0x9098AA), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(ui_Label_Printing_Time_4, &lv_font_montserrat_36, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_label_set_text(ui_Label_Printing_Time_4, "");
+    lv_obj_add_flag(ui_Label_Printing_Time_4, LV_OBJ_FLAG_HIDDEN);
 
     ui_IMG_Tine_4 = lv_img_create(ui_Display_Time_S2);
     lv_img_set_src(ui_IMG_Tine_4, &ui_img_icn_time_2_png);
     lv_obj_set_width(ui_IMG_Tine_4, LV_SIZE_CONTENT);
     lv_obj_set_height(ui_IMG_Tine_4, LV_SIZE_CONTENT);
-    lv_obj_set_x(ui_IMG_Tine_4, -73);
+    lv_obj_set_x(ui_IMG_Tine_4, 12);
     lv_obj_set_y(ui_IMG_Tine_4, 12);
-    lv_obj_set_align(ui_IMG_Tine_4, LV_ALIGN_TOP_MID);
+    lv_obj_set_align(ui_IMG_Tine_4, LV_ALIGN_TOP_LEFT);
     lv_obj_add_flag(ui_IMG_Tine_4, LV_OBJ_FLAG_ADV_HITTEST);     /// Flags
 
     /* Single, tightly-spaced "M:SS" readout (lives in ui_Label_Time_1) */
@@ -307,7 +301,7 @@ void ui_screenhome_screen_init(void)
     lv_obj_set_width(ui_Label_Time_1, LV_SIZE_CONTENT);
     lv_obj_set_height(ui_Label_Time_1, LV_SIZE_CONTENT);
     lv_obj_set_align(ui_Label_Time_1, LV_ALIGN_CENTER);
-    lv_obj_set_y(ui_Label_Time_1, 24);
+    lv_obj_set_y(ui_Label_Time_1, 4);
     lv_label_set_text(ui_Label_Time_1, "1:00");
     lv_obj_set_style_text_color(ui_Label_Time_1, lv_color_hex(0x00CCFC), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(ui_Label_Time_1, &lv_font_montserrat_48, LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -334,7 +328,7 @@ void ui_screenhome_screen_init(void)
 
     ui_Slider_Print_Speed2 = lv_slider_create(ui_Panel_Slider2);
     lv_slider_set_range(ui_Slider_Print_Speed2, 1, 12);
-    lv_slider_set_value(ui_Slider_Print_Speed2, 4, LV_ANIM_OFF);
+    lv_slider_set_value(ui_Slider_Print_Speed2, 6, LV_ANIM_OFF);
     lv_obj_set_width(ui_Slider_Print_Speed2, 330);
     lv_obj_set_height(ui_Slider_Print_Speed2, 30);
     lv_obj_set_align(ui_Slider_Print_Speed2, LV_ALIGN_CENTER);

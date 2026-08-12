@@ -124,7 +124,7 @@ static uint32_t lamp_remaining_h(uint32_t lamp_seconds)
 
 static inline uint32_t slider_get_time_s(void)
 {
-    return (uint32_t)lv_slider_get_value(ui_Slider_Print_Speed2) * 15u;
+    return (uint32_t)lv_slider_get_value(ui_Slider_Print_Speed2) * 5u;
 }
 
 static void set_time_display(uint32_t seconds)

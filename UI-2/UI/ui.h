@@ -75,7 +75,8 @@ LV_IMG_DECLARE(ui_img_btn_print_down_v2_png);    // assets/btn_print_down_v2.png
 LV_IMG_DECLARE(ui_img_btn_print_top_off_png);    // assets/btn_print_top_off.png
 LV_IMG_DECLARE(ui_img_arrow_right_png);    // assets/arrow_right.png
 
-// FONTS  (built-in Montserrat only: 16, 36, 48)
+// FONTS
+LV_FONT_DECLARE(ui_font_timefont);
 LV_IMG_DECLARE(ui_img_nav_bar);   // left sidebar — legacy, no longer drawn
 LV_IMG_DECLARE(ui_img_icn_home_png);    // nav icon: Home
 LV_IMG_DECLARE(ui_img_icn_info_png);    // nav icon: Info
