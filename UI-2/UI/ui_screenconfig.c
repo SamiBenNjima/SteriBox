@@ -56,14 +56,35 @@ lv_obj_t * ui_lamp2_pct_label   = NULL;
 lv_obj_t * ui_lampe_1           = NULL;   /* lamp1 reset btn */
 lv_obj_t * ui_lampe_2           = NULL;   /* lamp2 reset btn */
 
-/* confirmation popup */
+/* confirmation / lamp edit popup */
 lv_obj_t * ui_confirm_popup  = NULL;
+lv_obj_t * ui_confirm_cpanel = NULL;
 lv_obj_t * ui_confirm_label  = NULL;
+lv_obj_t * ui_confirm_ta     = NULL;
 lv_obj_t * ui_confirm_yes    = NULL;
 lv_obj_t * ui_confirm_no     = NULL;
 
 /* Apply Changes button */
 lv_obj_t * ui_BTN_Apply = NULL;
+
+/* Custom 4x3 Numerical Keyboard Map */
+static const char * sbx_num_kb_map[] = {
+    "1", "2", "3", "\n",
+    "4", "5", "6", "\n",
+    "7", "8", "9", "\n",
+    LV_SYMBOL_BACKSPACE, "0", LV_SYMBOL_OK, ""
+};
+
+#ifndef LV_KEYBOARD_CTRL_BTN_FLAGS
+#define LV_KEYBOARD_CTRL_BTN_FLAGS (LV_BTNMATRIX_CTRL_NO_REPEAT)
+#endif
+
+static const lv_btnmatrix_ctrl_t sbx_num_kb_ctrl_map[] = {
+    1, 1, 1,
+    1, 1, 1,
+    1, 1, 1,
+    LV_KEYBOARD_CTRL_BTN_FLAGS | 1, 1, LV_KEYBOARD_CTRL_BTN_FLAGS | 1
+};
 
 /* ── stubs for widgets removed in this redesign but still referenced
  *    in steribox_app.c (usb_icons_refresh, panel header, etc.)      */
@@ -123,6 +144,36 @@ void ui_event_Panel2(lv_event_t * e)
     }
 }
 
+void ui_event_confirm_popup(lv_event_t * e)
+{
+    if(lv_event_get_code(e) == LV_EVENT_PRESSED || lv_event_get_code(e) == LV_EVENT_CLICKED) {
+        if(ui_Keyboard1) _ui_flag_modify(ui_Keyboard1, LV_OBJ_FLAG_HIDDEN, _UI_MODIFY_FLAG_ADD);
+        if(ui_confirm_cpanel) lv_obj_set_y(ui_confirm_cpanel, 0);
+    }
+}
+
+static void ui_keyboard_event_cb(lv_event_t * e)
+{
+    lv_event_code_t code = lv_event_get_code(e);
+    if(code == LV_EVENT_READY || code == LV_EVENT_CANCEL) {
+        if(ui_Keyboard1) _ui_flag_modify(ui_Keyboard1, LV_OBJ_FLAG_HIDDEN, _UI_MODIFY_FLAG_ADD);
+        if(ui_confirm_cpanel) lv_obj_set_y(ui_confirm_cpanel, 0);
+        if(ui_Panel2) lv_obj_set_y(ui_Panel2, 0);
+    }
+}
+
+void ui_event_confirm_ta(lv_event_t * e)
+{
+    lv_event_code_t code = lv_event_get_code(e);
+    if(code == LV_EVENT_FOCUSED || code == LV_EVENT_CLICKED) {
+        _ui_keyboard_set_target(ui_Keyboard1, ui_confirm_ta);
+        lv_keyboard_set_mode(ui_Keyboard1, LV_KEYBOARD_MODE_NUMBER);
+        _ui_flag_modify(ui_Keyboard1, LV_OBJ_FLAG_HIDDEN, _UI_MODIFY_FLAG_REMOVE);
+        if(ui_Keyboard1) lv_obj_move_foreground(ui_Keyboard1);
+        if(ui_confirm_cpanel) lv_obj_set_y(ui_confirm_cpanel, -110);
+    }
+}
+
 void ui_event_pwd(lv_event_t * e)
 {
     lv_event_code_t code = lv_event_get_code(e);
@@ -130,6 +181,7 @@ void ui_event_pwd(lv_event_t * e)
         _ui_keyboard_set_target(ui_Keyboard1, ui_pwd);
         lv_keyboard_set_mode(ui_Keyboard1, LV_KEYBOARD_MODE_NUMBER);
         _ui_flag_modify(ui_Keyboard1, LV_OBJ_FLAG_HIDDEN, _UI_MODIFY_FLAG_REMOVE);
+        if(ui_Keyboard1) lv_obj_move_foreground(ui_Keyboard1);
         if(ui_Panel2) lv_obj_set_y(ui_Panel2, -110); /* Shift popup higher to clear onscreen keyboard */
     }
 }
@@ -279,8 +331,8 @@ static void build_lamp_col(lv_obj_t * row,
     /* hours remaining */
     *hrs_out = make_label(col, "-- h left", COL_SUBTEXT, &lv_font_montserrat_36);
 
-    /* Reset button */
-    *rst_out = make_cyan_btn(col, "Reset", 170, 56, &lv_font_montserrat_36);
+    /* Edit button */
+    *rst_out = make_cyan_btn(col, "Edit", 170, 56, &lv_font_montserrat_36);
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -395,6 +447,8 @@ void ui_screenconfig_screen_init(void)
     lv_textarea_set_one_line(ui_pwd, true);
     lv_obj_set_style_bg_color(ui_pwd,   lv_color_hex(0x101C2A), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_color(ui_pwd, lv_color_hex(COL_TEXT), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_color(ui_pwd,   lv_color_hex(0xC0C0C0), LV_PART_CURSOR | LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(ui_pwd,     255,                     LV_PART_CURSOR | LV_STATE_DEFAULT);
 
     /* Confirm button */
     ui_Button2 = lv_btn_create(ui_Panel2);
@@ -428,10 +482,35 @@ void ui_screenconfig_screen_init(void)
     lv_obj_set_style_text_color(ui_Label3, lv_color_hex(COL_TEXT),       LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(ui_Label3,  &lv_font_montserrat_16,       LV_PART_MAIN | LV_STATE_DEFAULT);
 
-    ui_Keyboard1 = lv_keyboard_create(ui_popup);
-    lv_obj_set_size(ui_Keyboard1, 800, lv_pct(40));
-    lv_obj_set_align(ui_Keyboard1, LV_ALIGN_BOTTOM_LEFT);
-    lv_keyboard_set_mode(ui_Keyboard1, LV_KEYBOARD_MODE_NUMBER); /* Default to number layout active first */
+
+
+    ui_Keyboard1 = lv_keyboard_create(lv_layer_top());
+    lv_obj_set_size(ui_Keyboard1, 460, 180);
+    lv_obj_set_align(ui_Keyboard1, LV_ALIGN_BOTTOM_MID);
+    lv_obj_set_y(ui_Keyboard1, -4);
+
+    /* Apply custom 4x3 map for NUMBER mode */
+    lv_keyboard_set_map(ui_Keyboard1, LV_KEYBOARD_MODE_NUMBER, sbx_num_kb_map, sbx_num_kb_ctrl_map);
+    lv_keyboard_set_mode(ui_Keyboard1, LV_KEYBOARD_MODE_NUMBER);
+
+    /* Tight button spacing / padding & big touchable buttons */
+    lv_obj_set_style_pad_all(ui_Keyboard1, 3, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_row(ui_Keyboard1, 3, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_column(ui_Keyboard1, 3, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_color(ui_Keyboard1, lv_color_hex(0x121922), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(ui_Keyboard1, 245, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_border_color(ui_Keyboard1, lv_color_hex(COL_ACCENT), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_border_width(ui_Keyboard1, 2, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_radius(ui_Keyboard1, 10, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    /* Button items style: clear 24px font, crisp white on dark slate */
+    lv_obj_set_style_text_font(ui_Keyboard1, &lv_font_montserrat_36, LV_PART_ITEMS | LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_color(ui_Keyboard1, lv_color_hex(0x202D3F), LV_PART_ITEMS | LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(ui_Keyboard1, 255, LV_PART_ITEMS | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_color(ui_Keyboard1, lv_color_hex(0xFFFFFF), LV_PART_ITEMS | LV_STATE_DEFAULT);
+    lv_obj_set_style_radius(ui_Keyboard1, 6, LV_PART_ITEMS | LV_STATE_DEFAULT);
+
+    lv_obj_add_event_cb(ui_Keyboard1, ui_keyboard_event_cb, LV_EVENT_ALL, NULL);
     lv_obj_add_flag(ui_Keyboard1, LV_OBJ_FLAG_HIDDEN);
 
     lv_obj_add_event_cb(ui_Panel2,  ui_event_Panel2,  LV_EVENT_ALL, NULL);
@@ -616,56 +695,72 @@ void ui_screenconfig_screen_init(void)
     lv_obj_update_layout(pager);
     lv_obj_scroll_to_y(pager, 0, LV_ANIM_OFF);
 
-    /* ── Confirmation popup ─────────────────────────────────────────── */
+    /* ── Edit Lamp Hours popup (mirrors password overlay style) ─────── */
     ui_confirm_popup = lv_obj_create(ui_screenconfig);
+    lv_obj_remove_style_all(ui_confirm_popup);
     lv_obj_set_size(ui_confirm_popup, 800, 480);
     lv_obj_set_align(ui_confirm_popup, LV_ALIGN_CENTER);
     lv_obj_add_flag(ui_confirm_popup, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(ui_confirm_popup, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_clear_flag(ui_confirm_popup, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_bg_color(ui_confirm_popup, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_opa(ui_confirm_popup, 180, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_border_width(ui_confirm_popup, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(ui_confirm_popup, 170, LV_PART_MAIN | LV_STATE_DEFAULT);  /* Same as pwd */
+    lv_obj_add_event_cb(ui_confirm_popup, ui_event_confirm_popup, LV_EVENT_ALL, NULL);
 
-    lv_obj_t * c_panel = lv_obj_create(ui_confirm_popup);
-    lv_obj_set_size(c_panel, 400, 185);
-    lv_obj_set_align(c_panel, LV_ALIGN_CENTER);
-    lv_obj_clear_flag(c_panel, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_bg_color(c_panel,     lv_color_hex(0x1E2D40), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_opa(c_panel,       255,                     LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_border_color(c_panel, lv_color_hex(COL_ACCENT),LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_border_width(c_panel, 2,                       LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_radius(c_panel,       12,                      LV_PART_MAIN | LV_STATE_DEFAULT);
+    ui_confirm_cpanel = lv_obj_create(ui_confirm_popup);
+    lv_obj_set_size(ui_confirm_cpanel, 440, 240);   /* Same as ui_Panel2 */
+    lv_obj_set_align(ui_confirm_cpanel, LV_ALIGN_CENTER);
+    lv_obj_set_y(ui_confirm_cpanel, 0);
+    lv_obj_clear_flag(ui_confirm_cpanel, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_bg_color(ui_confirm_cpanel,     lv_color_hex(0x191D26), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(ui_confirm_cpanel,       255,                     LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_border_color(ui_confirm_cpanel, lv_color_hex(COL_ACCENT),LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_border_width(ui_confirm_cpanel, 2,                       LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_radius(ui_confirm_cpanel,       14,                      LV_PART_MAIN | LV_STATE_DEFAULT);
 
-    ui_confirm_label = lv_label_create(c_panel);
-    lv_obj_set_width(ui_confirm_label, 360);
-    lv_obj_set_height(ui_confirm_label, LV_SIZE_CONTENT);
+    ui_confirm_label = lv_label_create(ui_confirm_cpanel);
     lv_obj_set_align(ui_confirm_label, LV_ALIGN_TOP_MID);
-    lv_obj_set_y(ui_confirm_label, 20);
-    lv_label_set_text(ui_confirm_label, "Reset lamp hours to 0?");
+    lv_obj_set_y(ui_confirm_label, 14);
+    lv_label_set_text(ui_confirm_label, LV_SYMBOL_EDIT "  Edit Lamp Used Hours");
     lv_label_set_long_mode(ui_confirm_label, LV_LABEL_LONG_WRAP);
-    lv_obj_set_style_text_color(ui_confirm_label,  lv_color_hex(COL_TEXT),   LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_align(ui_confirm_label,  LV_TEXT_ALIGN_CENTER,     LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(ui_confirm_label,   &lv_font_montserrat_16,   LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_color(ui_confirm_label, lv_color_hex(COL_TEXT),   LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(ui_confirm_label,  &lv_font_montserrat_16,   LV_PART_MAIN | LV_STATE_DEFAULT);
 
-    ui_confirm_yes = lv_btn_create(c_panel);
-    lv_obj_set_size(ui_confirm_yes, 148, 44);
+    ui_confirm_ta = lv_textarea_create(ui_confirm_cpanel);
+    lv_obj_set_size(ui_confirm_ta, 360, 44);    /* Same as ui_pwd */
+    lv_obj_set_align(ui_confirm_ta, LV_ALIGN_TOP_MID);
+    lv_obj_set_y(ui_confirm_ta, 48);            /* Same y as ui_pwd */
+    lv_textarea_set_placeholder_text(ui_confirm_ta, "0 - 9000 h");
+    lv_textarea_set_one_line(ui_confirm_ta, true);
+    lv_textarea_set_accepted_chars(ui_confirm_ta, "0123456789");
+    lv_obj_set_style_bg_color(ui_confirm_ta,   lv_color_hex(0x101C2A), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_color(ui_confirm_ta, lv_color_hex(COL_TEXT),  LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(ui_confirm_ta,  &lv_font_montserrat_36,  LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_align(ui_confirm_ta, LV_TEXT_ALIGN_CENTER,    LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_color(ui_confirm_ta,   lv_color_hex(0xC0C0C0),  LV_PART_CURSOR | LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(ui_confirm_ta,     255,                      LV_PART_CURSOR | LV_STATE_DEFAULT);
+
+    /* Save button – same layout as Confirm button on pwd popup */
+    ui_confirm_yes = lv_btn_create(ui_confirm_cpanel);
+    lv_obj_set_size(ui_confirm_yes, 152, 44);
     lv_obj_set_align(ui_confirm_yes, LV_ALIGN_BOTTOM_LEFT);
-    lv_obj_set_pos(ui_confirm_yes, 14, -14);
+    lv_obj_set_pos(ui_confirm_yes, 16, 8);      /* Same y offset as pwd buttons */
     lv_obj_clear_flag(ui_confirm_yes, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_bg_color(ui_confirm_yes,     lv_color_hex(0xC2003F), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_opa(ui_confirm_yes,       255,                     LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_radius(ui_confirm_yes,       8,                       LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_shadow_width(ui_confirm_yes, 0,                       LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_color(ui_confirm_yes,     lv_color_hex(COL_ACCENT), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(ui_confirm_yes,       255,                       LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_radius(ui_confirm_yes,       8,                         LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_shadow_width(ui_confirm_yes, 0,                         LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_t * yes_lbl = lv_label_create(ui_confirm_yes);
     lv_obj_set_align(yes_lbl, LV_ALIGN_CENTER);
-    lv_label_set_text(yes_lbl, "Yes, Reset");
-    lv_obj_set_style_text_color(yes_lbl, lv_color_hex(0xFFFFFF),           LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(yes_lbl,  &lv_font_montserrat_16,           LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_label_set_text(yes_lbl, "Save");
+    lv_obj_set_style_text_color(yes_lbl, lv_color_hex(0x000000),         LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(yes_lbl,  &lv_font_montserrat_16,         LV_PART_MAIN | LV_STATE_DEFAULT);
 
-    ui_confirm_no = lv_btn_create(c_panel);
-    lv_obj_set_size(ui_confirm_no, 148, 44);
+    /* Cancel button – same layout as Cancel button on pwd popup */
+    ui_confirm_no = lv_btn_create(ui_confirm_cpanel);
+    lv_obj_set_size(ui_confirm_no, 152, 44);
     lv_obj_set_align(ui_confirm_no, LV_ALIGN_BOTTOM_RIGHT);
-    lv_obj_set_pos(ui_confirm_no, -14, -14);
+    lv_obj_set_pos(ui_confirm_no, -16, 8);
     lv_obj_clear_flag(ui_confirm_no, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_bg_color(ui_confirm_no,     lv_color_hex(0x3A4860),  LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_bg_opa(ui_confirm_no,       255,                      LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -676,6 +771,9 @@ void ui_screenconfig_screen_init(void)
     lv_label_set_text(no_lbl, "Cancel");
     lv_obj_set_style_text_color(no_lbl, lv_color_hex(COL_TEXT),            LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(no_lbl,  &lv_font_montserrat_16,            LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    lv_obj_add_event_cb(ui_confirm_cpanel, ui_event_confirm_popup, LV_EVENT_ALL, NULL);
+    lv_obj_add_event_cb(ui_confirm_ta,     ui_event_confirm_ta,    LV_EVENT_ALL, NULL);
 
     /* ── Calendar overlay ───────────────────────────────────────────── */
     ui_layer2 = lv_obj_create(ui_screenconfig);

@@ -53,11 +53,15 @@ extern lv_obj_t * ui_lamp2_pct_label;
 /* Reset buttons */
 extern lv_obj_t * ui_lampe_1;       /* lamp1 reset button       */
 extern lv_obj_t * ui_lampe_2;       /* lamp2 reset button       */
-/* Confirmation popup */
+/* Confirmation / Lamp Edit popup */
 extern lv_obj_t * ui_confirm_popup;
+extern lv_obj_t * ui_confirm_cpanel;
 extern lv_obj_t * ui_confirm_label;
+extern lv_obj_t * ui_confirm_ta;
 extern lv_obj_t * ui_confirm_yes;
 extern lv_obj_t * ui_confirm_no;
+extern void ui_event_confirm_popup(lv_event_t * e);
+extern void ui_event_confirm_ta(lv_event_t * e);
 /* Apply Changes button */
 extern lv_obj_t * ui_BTN_Apply;
 

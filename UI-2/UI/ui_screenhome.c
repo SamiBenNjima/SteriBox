@@ -260,11 +260,11 @@ void ui_screenhome_screen_init(void)
     lv_obj_set_width(ui_Number_Print1, LV_SIZE_CONTENT);
     lv_obj_set_height(ui_Number_Print1, LV_SIZE_CONTENT);
     lv_obj_set_x(ui_Number_Print1, 0);
-    lv_obj_set_y(ui_Number_Print1, 0);
-    lv_obj_set_align(ui_Number_Print1, LV_ALIGN_CENTER);
+    lv_obj_set_y(ui_Number_Print1, -34);
+    lv_obj_set_align(ui_Number_Print1, LV_ALIGN_BOTTOM_MID);
     lv_label_set_text(ui_Number_Print1, "0%");
     lv_obj_set_style_text_color(ui_Number_Print1, lv_color_hex(0x00D2FF), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(ui_Number_Print1, &ui_font_timefont, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(ui_Number_Print1, &lv_font_montserrat_36, LV_PART_MAIN | LV_STATE_DEFAULT);
 
     /* Time display - top right */
     ui_Display_Time_S2 = lv_obj_create(ui_Panel8);
@@ -302,9 +302,9 @@ void ui_screenhome_screen_init(void)
     lv_obj_set_height(ui_Label_Time_1, LV_SIZE_CONTENT);
     lv_obj_set_align(ui_Label_Time_1, LV_ALIGN_CENTER);
     lv_obj_set_y(ui_Label_Time_1, 4);
-    lv_label_set_text(ui_Label_Time_1, "1:00");
+    lv_label_set_text(ui_Label_Time_1, "0:30");
     lv_obj_set_style_text_color(ui_Label_Time_1, lv_color_hex(0x00CCFC), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(ui_Label_Time_1, &lv_font_montserrat_48, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(ui_Label_Time_1, &ui_font_timefont, LV_PART_MAIN | LV_STATE_DEFAULT);
 
     /* Legacy colon / seconds labels — hidden (kept for app + destroy refs) */
     ui_Label_Time_5 = lv_label_create(ui_Display_Time_S2);
@@ -451,7 +451,7 @@ void ui_screenhome_screen_init(void)
     lv_obj_set_style_text_color(gsub, lv_color_hex(0x7C89A5), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(gsub, &lv_font_montserrat_16, LV_PART_MAIN | LV_STATE_DEFAULT);
 
-    /* Y-axis caption */
+    /*/* Y-axis caption */
     lv_obj_t * ycap = lv_label_create(chartCard);
     lv_label_set_text(ycap, "log10");
     lv_obj_set_align(ycap, LV_ALIGN_TOP_LEFT);
@@ -503,9 +503,10 @@ void ui_screenhome_screen_init(void)
     lv_obj_set_align(legend, LV_ALIGN_BOTTOM_MID);
     lv_obj_set_y(legend, -8);
     lv_obj_clear_flag(legend, LV_OBJ_FLAG_SCROLLABLE);
-    legend_chip(legend, 40,  COL_ECOLI, "E. coli");
+    /*legend_chip(legend, 40,  COL_ECOLI, "E. coli");
     legend_chip(legend, 250, COL_SAUR,  "S. aureus");
     legend_chip(legend, 470, COL_ASPER, "A. niger");
+    */
 
     /*============================================================
      * PAGE INDICATOR (two dots on the right edge)

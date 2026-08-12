@@ -59,12 +59,12 @@ static bool pwd_ok;               /*last password attempt result*/
 
 static lv_timer_t * refresh_timer;
 static lv_timer_t * cycle_timer;
-static lv_timer_t * warmup_timer;      /* 3 s pre-lamp safety countdown */
+static lv_timer_t * warmup_timer;      /* 3min s pre-lamp safety countdown */
 static uint8_t      warmup_left;
 static lv_timer_t * done_timer;        /* holds "DONE" ~3 s, then arms START */
 static lv_timer_t * pause_timeout_timer; /* 10 s pause timeout before auto-abort */
 
-#define SBX_WARMUP_S 3
+#define SBX_WARMUP_S 180
 #define SBX_PAUSE_TIMEOUT_MS 10000     /* 10 s max pause window */
 
 /* End-of-cycle result popup (defined below, shown from cycle_stop) */
@@ -1304,19 +1304,27 @@ static void refresh_lamp_arcs(void)
 static void confirm_yes_cb(lv_event_t * e)
 {
     if(lv_event_get_code(e) != LV_EVENT_CLICKED) return;
+    const char * txt = ui_confirm_ta ? lv_textarea_get_text(ui_confirm_ta) : "0";
+    int hours = atoi(txt);
+    if(hours < 0) hours = 0;
+    if(hours > (int)SBX_LAMP_LIFE_HOURS) hours = (int)SBX_LAMP_LIFE_HOURS;
+    uint32_t new_secs = (uint32_t)hours * 3600u;
+
     if(lamp_to_reset == 1) {
-        persist.lamp1_seconds = 0;
+        persist.lamp1_seconds = new_secs;
         sbx_hal_storage_save(&persist);
-        sbx_hal_log_event("CFG_LAMP_RESET", "lamp=1");
+        sbx_hal_log_event("CFG_LAMP_EDIT", "lamp=1");
         sbx_hal_buzzer(SBX_BEEP_OK);
     }
     else if(lamp_to_reset == 2) {
-        persist.lamp2_seconds = 0;
+        persist.lamp2_seconds = new_secs;
         sbx_hal_storage_save(&persist);
-        sbx_hal_log_event("CFG_LAMP_RESET", "lamp=2");
+        sbx_hal_log_event("CFG_LAMP_EDIT", "lamp=2");
         sbx_hal_buzzer(SBX_BEEP_OK);
     }
     lamp_to_reset = 0;
+    if(ui_Keyboard1) _ui_flag_modify(ui_Keyboard1, LV_OBJ_FLAG_HIDDEN, _UI_MODIFY_FLAG_ADD);
+    if(ui_confirm_cpanel) lv_obj_set_y(ui_confirm_cpanel, 0);
     lv_obj_add_flag(ui_confirm_popup, LV_OBJ_FLAG_HIDDEN);
     refresh_lamp_arcs();
     info_screen_refresh();
@@ -1326,6 +1334,8 @@ static void confirm_no_cb(lv_event_t * e)
 {
     if(lv_event_get_code(e) != LV_EVENT_CLICKED) return;
     lamp_to_reset = 0;
+    if(ui_Keyboard1) _ui_flag_modify(ui_Keyboard1, LV_OBJ_FLAG_HIDDEN, _UI_MODIFY_FLAG_ADD);
+    if(ui_confirm_cpanel) lv_obj_set_y(ui_confirm_cpanel, 0);
     lv_obj_add_flag(ui_confirm_popup, LV_OBJ_FLAG_HIDDEN);
     sbx_hal_buzzer(SBX_BEEP_KEY);
 }
@@ -1334,7 +1344,13 @@ static void lamp1_reset_cb(lv_event_t * e)
 {
     if(lv_event_get_code(e) != LV_EVENT_CLICKED) return;
     lamp_to_reset = 1;
-    lv_label_set_text(ui_confirm_label, "Reset Lamp 1 hours to 0?");
+    lv_label_set_text(ui_confirm_label, "Edit Lamp 1 Used Hours (0-9000):");
+    char buf[16];
+    uint32_t h = persist.lamp1_seconds / 3600u;
+    lv_snprintf(buf, sizeof(buf), "%u", (unsigned)h);
+    if(ui_confirm_ta) lv_textarea_set_text(ui_confirm_ta, buf);
+    if(ui_confirm_cpanel) lv_obj_set_y(ui_confirm_cpanel, 0);
+    if(ui_Keyboard1) _ui_flag_modify(ui_Keyboard1, LV_OBJ_FLAG_HIDDEN, _UI_MODIFY_FLAG_ADD);
     lv_obj_clear_flag(ui_confirm_popup, LV_OBJ_FLAG_HIDDEN);
     sbx_hal_buzzer(SBX_BEEP_KEY);
 }
@@ -1343,7 +1359,13 @@ static void lamp2_reset_cb(lv_event_t * e)
 {
     if(lv_event_get_code(e) != LV_EVENT_CLICKED) return;
     lamp_to_reset = 2;
-    lv_label_set_text(ui_confirm_label, "Reset Lamp 2 hours to 0?");
+    lv_label_set_text(ui_confirm_label, "Edit Lamp 2 Used Hours (0-9000):");
+    char buf[16];
+    uint32_t h = persist.lamp2_seconds / 3600u;
+    lv_snprintf(buf, sizeof(buf), "%u", (unsigned)h);
+    if(ui_confirm_ta) lv_textarea_set_text(ui_confirm_ta, buf);
+    if(ui_confirm_cpanel) lv_obj_set_y(ui_confirm_cpanel, 0);
+    if(ui_Keyboard1) _ui_flag_modify(ui_Keyboard1, LV_OBJ_FLAG_HIDDEN, _UI_MODIFY_FLAG_ADD);
     lv_obj_clear_flag(ui_confirm_popup, LV_OBJ_FLAG_HIDDEN);
     sbx_hal_buzzer(SBX_BEEP_KEY);
 }
@@ -1569,6 +1591,7 @@ void steribox_app_init(void)
     lv_obj_add_event_cb(ui_screenconfig, config_screen_loaded_cb, LV_EVENT_ALL, NULL);
     lv_obj_add_event_cb(ui_confirm_yes,  confirm_yes_cb,        LV_EVENT_ALL, NULL);
     lv_obj_add_event_cb(ui_confirm_no,   confirm_no_cb,         LV_EVENT_ALL, NULL);
+    if(ui_confirm_ta) lv_obj_add_event_cb(ui_confirm_ta, confirm_yes_cb, LV_EVENT_READY, NULL);
     lv_obj_add_event_cb(ui_layer2,       calendar_overlay_cb,   LV_EVENT_ALL, NULL);
     lv_obj_add_flag(ui_layer2, LV_OBJ_FLAG_CLICKABLE);
     /* Apply Changes + Synchronize buttons */
