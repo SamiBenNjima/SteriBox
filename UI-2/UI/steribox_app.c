@@ -22,6 +22,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "sbx_report.h"
 #include "sbx_topbar.h"
 #include "steribox_app.h"
 #include "steribox_hal.h"
@@ -110,17 +111,6 @@ static uint32_t cycle_elapsed_s;
  * ballast restrike + time for the operator to clear the chamber. */
 #define SBX_MIN_RESTRIKE_S 3u
 
-<<<<<<< HEAD
-static lv_timer_t * refresh_timer;
-static lv_timer_t * cycle_timer;
-static lv_timer_t * warmup_timer;      /* 3min s pre-lamp safety countdown */
-static uint8_t      warmup_left;
-static lv_timer_t * done_timer;        /* holds "DONE" ~3 s, then arms START */
-static lv_timer_t * pause_timeout_timer; /* 10 s pause timeout before auto-abort */
-
-#define SBX_WARMUP_S 180
-#define SBX_PAUSE_TIMEOUT_MS 10000     /* 10 s max pause window */
-=======
 /* Dose accounting for the current cycle.
  * cycle_eff_s  : full-power-equivalent lamp-seconds delivered so far,
  *                integrated one second at a time so that door pauses
@@ -130,6 +120,20 @@ static lv_timer_t * pause_timeout_timer; /* 10 s pause timeout before auto-abort
 static float cycle_eff_s;
 static uint32_t lamp_streak_s; /* burn seconds credited to the ramp */
 static uint32_t lamp_off_tick; /* lv_tick when the lamps last went off */
+
+/* Lamp ACTIVE time inside the current cycle. This is wall-clock seconds
+ * with the ballast energised - preheat included, door pauses excluded -
+ * and it is what goes on the ticket. It is deliberately NOT the same
+ * number as cycle_eff_s: during the 180 s ramp the lamps are on but
+ * delivering 25..100% of their output, so the equivalent exposure is
+ * always the smaller of the two. Operators read lamp-on time; the dose
+ * model reads the equivalent seconds. */
+static uint32_t cycle_lamp_on_s;  /* >= 1 lamp energised */
+static uint32_t cycle_lamp1_on_s; /* per tube, for uneven wear */
+static uint32_t cycle_lamp2_on_s;
+static uint32_t cycle_warm_s;     /* preheat seconds actually performed */
+static uint32_t cycle_door_events;/* door interruptions during the cycle */
+static sbx_datetime_t cycle_start_dt;
 
 static bool pwd_ok; /*last password attempt result*/
 
@@ -142,10 +146,42 @@ static lv_timer_t
     *pause_timeout_timer; /* 10 s pause timeout before auto-abort */
 
 #define SBX_PAUSE_TIMEOUT_MS 10000 /* 10 s max pause window */
->>>>>>> dfeea45e2bc20f827e0b9e9dd96edf40f4175a84
+
+/*==================================================================
+ * Last-cycle record
+ *
+ * Frozen at cycle_stop() for EVERY cycle, whatever the outcome. The
+ * ticket, the result popup and the PDF all read this snapshot rather
+ * than the live counters, so a report stays truthful after the machine
+ * has gone back to IDLE - and an aborted cycle is exactly as reportable
+ * as a completed one.
+ *=================================================================*/
+typedef struct {
+  bool valid;
+  uint32_t seq; /* device-wide cycle number, aborted ones included */
+  sbx_end_reason_t reason;
+  sbx_datetime_t start;
+  sbx_datetime_t end;
+  uint32_t planned_s; /* run time selected on the slider     */
+  uint32_t elapsed_s; /* run seconds actually completed      */
+  uint32_t warmup_s;  /* preheat seconds actually performed  */
+  uint32_t lamp_on_s; /* lamp ACTIVE time, preheat included  */
+  uint32_t lamp1_on_s;
+  uint32_t lamp2_on_s;
+  uint32_t door_events;
+  float eff_s;      /* full-power-equivalent lamp seconds */
+  float dose_mj;    /* worst-point delivered dose         */
+  float irradiance; /* worst-point irradiance at the end  */
+  float temp_c;
+  float hum_pct;
+  uint32_t lamp1_rem_h;
+  uint32_t lamp2_rem_h;
+} sbx_cycle_t;
+
+static sbx_cycle_t last_cycle;
 
 /* End-of-cycle result popup (defined below, shown from cycle_stop) */
-static void show_end_popup(bool aborted);
+static void show_end_popup(void);
 /* Target-organism toggle list (defined below) */
 static void org_open_cb(lv_event_t *e);
 static void org_list_create(void);
@@ -204,14 +240,9 @@ static uint32_t lamp_remaining_h(uint32_t lamp_seconds) {
   return (used_h >= SBX_LAMP_LIFE_HOURS) ? 0u : (SBX_LAMP_LIFE_HOURS - used_h);
 }
 
-<<<<<<< HEAD
-static inline uint32_t slider_get_time_s(void)
-{
-    return (uint32_t)lv_slider_get_value(ui_Slider_Print_Speed2) * 5u;
-=======
+/* Slider range is 1..12 -> 5 s .. 1 min (see commit "time/slider : 1min max"). */
 static inline uint32_t slider_get_time_s(void) {
-  return (uint32_t)lv_slider_get_value(ui_Slider_Print_Speed2) * 15u;
->>>>>>> dfeea45e2bc20f827e0b9e9dd96edf40f4175a84
+  return (uint32_t)lv_slider_get_value(ui_Slider_Print_Speed2) * 5u;
 }
 
 static void set_time_display(uint32_t seconds) {
@@ -523,15 +554,18 @@ static void dose_tick(void) {
   bool any = false;
   if (sbx_hal_relay_get(SBX_RELAY_LAMP1)) {
     persist.lamp1_seconds++;
+    cycle_lamp1_on_s++;
     any = true;
   }
   if (sbx_hal_relay_get(SBX_RELAY_LAMP2)) {
     persist.lamp2_seconds++;
+    cycle_lamp2_on_s++;
     any = true;
   }
   persist.total_seconds++;
   if (any) {
     lamp_streak_s++;
+    cycle_lamp_on_s++;
     cycle_eff_s += lamp_output_frac(lamp_streak_s);
   }
 }
@@ -583,8 +617,73 @@ static void done_revert_now(void) {
     reset_after_done();
 }
 
-/* Terminate the cycle: DONE (finished) or IDLE (manual stop). */
-static void cycle_stop(sbx_state_t end_state) {
+/* Human-readable verdict / motive for a cycle outcome. Both are used on
+ * the ticket, in the PDF and in the CSV ledger, so neither may contain a
+ * comma. */
+static const char *end_result_str(sbx_end_reason_t r) {
+  switch (r) {
+  case SBX_END_COMPLETED:
+    return "TERMINE";
+  case SBX_END_OPERATOR_STOP:
+    return "ANNULE";
+  case SBX_END_DOOR_TIMEOUT:
+  default:
+    return "ANNULE";
+  }
+}
+
+static const char *end_reason_str(sbx_end_reason_t r) {
+  switch (r) {
+  case SBX_END_COMPLETED:
+    return "Duree programmee atteinte";
+  case SBX_END_OPERATOR_STOP:
+    return "Arret manuel par l'operateur";
+  case SBX_END_DOOR_TIMEOUT:
+  default:
+    return "Porte restee ouverte plus de 10 s";
+  }
+}
+
+/* Freeze everything the reports will need. Called for EVERY cycle end -
+ * a cancelled cycle produces exactly the same record as a completed one,
+ * only its reason and its counters differ. */
+static void cycle_record(sbx_end_reason_t reason) {
+  float t = 0.0f, h = 0.0f;
+  sbx_hal_read_env(&t, &h);
+
+  memset(&last_cycle, 0, sizeof(last_cycle));
+  last_cycle.valid = true;
+  last_cycle.reason = reason;
+  last_cycle.start = cycle_start_dt;
+  sbx_hal_get_datetime(&last_cycle.end);
+  last_cycle.planned_s = cycle_total_s;
+  last_cycle.elapsed_s = cycle_elapsed_s;
+  last_cycle.warmup_s = cycle_warm_s;
+  last_cycle.lamp_on_s = cycle_lamp_on_s;
+  last_cycle.lamp1_on_s = cycle_lamp1_on_s;
+  last_cycle.lamp2_on_s = cycle_lamp2_on_s;
+  last_cycle.door_events = cycle_door_events;
+  last_cycle.eff_s = cycle_eff_s;
+  last_cycle.dose_mj = uvc_dose_from_eff(cycle_eff_s);
+  last_cycle.irradiance = uvc_irradiance_now();
+  last_cycle.temp_c = t;
+  last_cycle.hum_pct = h;
+  last_cycle.lamp1_rem_h = lamp_remaining_h(persist.lamp1_seconds);
+  last_cycle.lamp2_rem_h = lamp_remaining_h(persist.lamp2_seconds);
+  /* Cancelled cycles are numbered in the same sequence as completed ones:
+   * the ledger has no gaps and every ticket carries a unique cycle N. */
+  last_cycle.seq = persist.cycles_done + persist.cycles_aborted;
+}
+
+/* Write the cycle to the SD card: one event row in syslog.csv, one full
+ * machine-readable row in cycles.csv, and a ready-to-reprint ticket. */
+static void cycle_log_to_sd(void);
+
+/* Terminate the cycle. Every path through here records a cycle. */
+static void cycle_stop(sbx_end_reason_t reason) {
+  bool completed = (reason == SBX_END_COMPLETED);
+  sbx_state_t end_state = completed ? SBX_STATE_DONE : SBX_STATE_IDLE;
+
   lamps_set(false);
   if (cycle_timer) {
     lv_timer_del(cycle_timer);
@@ -599,13 +698,13 @@ static void cycle_stop(sbx_state_t end_state) {
     pause_timeout_timer = NULL;
   }
 
-  if (end_state == SBX_STATE_DONE) {
+  if (completed) {
     persist.cycles_done++;
     sbx_hal_buzzer(SBX_BEEP_DONE);
     set_status("DONE");
     lv_obj_set_style_text_color(ui_Label1, lv_color_hex(0xFFFFFF), 0);
     set_progress(100);
-  } else { /*manual stop*/
+  } else {
     persist.cycles_aborted++;
     sbx_hal_buzzer(SBX_BEEP_OK);
     set_status("START");
@@ -616,33 +715,8 @@ static void cycle_stop(sbx_state_t end_state) {
 
   sbx_hal_storage_save(&persist);
 
-  /* ---- SD log: one row per cycle end ---- */
-  {
-    float t = 0.0f, h = 0.0f;
-    sbx_hal_read_env(&t, &h);
-    uint8_t lamps_active = 0;
-    if (lamp_remaining_h(persist.lamp1_seconds) > 0)
-      lamps_active++;
-    if (lamp_remaining_h(persist.lamp2_seconds) > 0)
-      lamps_active++;
-    float dose = uvc_dose_from_eff(cycle_eff_s);
-    float irr = uvc_irradiance_now();
-    uint32_t dur_min = cycle_total_s / 60u;
-    uint32_t dur_sec = cycle_total_s % 60u;
-    char detail[224];
-    snprintf(detail, sizeof(detail),
-             "dur=%um%02us warm=%us dose=%.1fmJ/cm2 E=%.2fmW/cm2 eff=%.0fs"
-             " lamps=%u/2 cycles=%u aborted=%u L1=%uh L2=%uh T=%dC RH=%d%%",
-             (unsigned)dur_min, (unsigned)dur_sec, (unsigned)SBX_WARMUP_S,
-             (double)dose, (double)irr, (double)cycle_eff_s,
-             (unsigned)lamps_active, (unsigned)persist.cycles_done,
-             (unsigned)persist.cycles_aborted,
-             (unsigned)lamp_remaining_h(persist.lamp1_seconds),
-             (unsigned)lamp_remaining_h(persist.lamp2_seconds), (int)(t + 0.5f),
-             (int)(h + 0.5f));
-    sbx_hal_log_event(
-        (end_state == SBX_STATE_DONE) ? "CYCLE_DONE" : "CYCLE_ABORT", detail);
-  }
+  cycle_record(reason); /* must run AFTER the counters are bumped */
+  cycle_log_to_sd();
 
   lv_obj_clear_state(ui_BTN_Pause_Top1, LV_STATE_CHECKED);
   lock_slider(false);
@@ -650,8 +724,8 @@ static void cycle_stop(sbx_state_t end_state) {
   sbx_hal_set_system_state((uint8_t)state);
   info_screen_refresh();
 
-  /* Announce the result (Terminee / Arretee) on the Home screen */
-  show_end_popup(end_state != SBX_STATE_DONE);
+  /* Announce the result and offer the ticket - for cancelled cycles too */
+  show_end_popup();
 
   /* On completion, hold "DONE" ~3 s (button inert) then arm START */
   if (end_state == SBX_STATE_DONE) {
@@ -667,7 +741,9 @@ static void pause_timeout_cb(lv_timer_t *t) {
   (void)t;
   pause_timeout_timer = NULL;
   if (state == SBX_STATE_PAUSED_DOOR) {
-    cycle_stop(SBX_STATE_IDLE); /* pause timed out (10 s) -> auto abort */
+    /* Door left open past the 10 s window. This is still a cycle: it gets
+     * a ledger row, a sequence number and a printable ticket. */
+    cycle_stop(SBX_END_DOOR_TIMEOUT);
   }
 }
 
@@ -677,10 +753,12 @@ static void pause_timeout_cb(lv_timer_t *t) {
  * a full 180 s preheat. */
 static void cycle_pause_door(void) {
   lamps_set(false);
-  char d[64];
-  snprintf(d, sizeof(d), "eff=%.0fs streak=%us elapsed=%us",
+  cycle_door_events++;
+  char d[96];
+  snprintf(d, sizeof(d), "eff=%.0fs streak=%us elapsed=%us lamp_on=%us n=%u",
            (double)cycle_eff_s, (unsigned)lamp_streak_s,
-           (unsigned)cycle_elapsed_s);
+           (unsigned)cycle_elapsed_s, (unsigned)cycle_lamp_on_s,
+           (unsigned)cycle_door_events);
   sbx_hal_log_event("DOOR_PAUSE", d);
   if (cycle_timer) {
     lv_timer_del(cycle_timer);
@@ -726,7 +804,7 @@ static void cycle_tick_cb(lv_timer_t *timer) {
   chart_update();
 
   if (cycle_elapsed_s >= cycle_total_s)
-    cycle_stop(SBX_STATE_DONE);
+    cycle_stop(SBX_END_COMPLETED);
 }
 
 /* Energise the lamps and start (or continue) counting down.
@@ -753,6 +831,7 @@ static void warmup_tick_cb(lv_timer_t *t) {
   }
 
   dose_tick();
+  cycle_warm_s++; /* preheat seconds actually performed, resumes included */
 
   if (warmup_left > 1) {
     warmup_left--;
@@ -803,6 +882,15 @@ static void cycle_begin(bool fresh) {
     cycle_total_s = slider_get_time_s();
     cycle_elapsed_s = 0;
     cycle_eff_s = 0.0f;
+    /* Per-cycle accounting starts clean. A resume (fresh=false) keeps
+     * accumulating into the same cycle - the lamp-on time reported on the
+     * ticket therefore spans every leg of an interrupted cycle. */
+    cycle_lamp_on_s = 0;
+    cycle_lamp1_on_s = 0;
+    cycle_lamp2_on_s = 0;
+    cycle_warm_s = 0;
+    cycle_door_events = 0;
+    sbx_hal_get_datetime(&cycle_start_dt);
     chart_reset();
     set_progress(0);
     set_time_display(cycle_total_s);
@@ -866,7 +954,7 @@ static void start_btn_cb(lv_event_t *e) {
   switch (state) {
   case SBX_STATE_RUNNING:
   case SBX_STATE_WARMUP:
-    cycle_stop(SBX_STATE_IDLE); /* manual stop */
+    cycle_stop(SBX_END_OPERATOR_STOP); /* recorded like any other cycle */
     break;
   case SBX_STATE_PAUSED_DOOR:
     cycle_begin(false); /* resume, full 180 s re-preheat */
@@ -902,85 +990,139 @@ static void duration_slider_cb(lv_event_t *e) {
   sbx_hal_buzzer(SBX_BEEP_KEY);
 }
 
-/*--- Info screen: export / print ---------------------------------*/
-static void build_report(char *buf, int len,
-                         const char *period /*NULL = none*/) {
-  sbx_datetime_t dt;
-  sbx_hal_get_datetime(&dt);
-  float t = 0, h = 0;
-  sbx_hal_read_env(&t, &h);
+/*==================================================================
+ * Reporting
+ *
+ * Everything that leaves the machine - printed ticket, SD ledger row,
+ * exported PDF - is rendered from one sbx_report_t built here, so the
+ * three can never disagree about what a cycle delivered.
+ *=================================================================*/
+static sbx_report_org_t report_orgs[SBX_ORG_COUNT];
+
+/** Fill `out` from the recorded cycle (or, when none has run yet, from the
+ *  current device state). `period` is the optional export date range. */
+static void build_report_data(sbx_report_t *out, const char *period) {
+  memset(out, 0, sizeof(*out));
+
+  const bool have = last_cycle.valid;
+  const float dose = have ? last_cycle.dose_mj : 0.0f;
+
+  /* Target organisms enabled at the time the report is produced */
+  uint8_t n = 0;
+  for (int o = 0; o < SBX_ORG_COUNT; o++) {
+    if (!organisms[o].enabled)
+      continue;
+    report_orgs[n].name = organisms[o].name;
+    report_orgs[n].color = organisms[o].color;
+    report_orgs[n].d10 = (float)organisms[o].d10_x10 / 10.0f;
+    report_orgs[n].log_reduction = log_reduction(dose, organisms[o].d10_x10);
+    n++;
+  }
+  out->orgs = report_orgs;
+  out->org_count = n;
+  out->target_log = 4.0f;
+
+  out->have_cycle = have;
+  out->period = period;
+  sbx_hal_get_datetime(&out->end);
+
+  if (have) {
+    out->seq = last_cycle.seq;
+    out->completed = (last_cycle.reason == SBX_END_COMPLETED);
+    out->result = end_result_str(last_cycle.reason);
+    out->reason = end_reason_str(last_cycle.reason);
+    out->start = last_cycle.start;
+    out->end = last_cycle.end;
+    out->planned_s = last_cycle.planned_s;
+    out->elapsed_s = last_cycle.elapsed_s;
+    out->warmup_s = last_cycle.warmup_s;
+    out->lamp_on_s = last_cycle.lamp_on_s;
+    out->lamp1_on_s = last_cycle.lamp1_on_s;
+    out->lamp2_on_s = last_cycle.lamp2_on_s;
+    out->door_events = last_cycle.door_events;
+    out->eff_s = last_cycle.eff_s;
+    out->dose_mj = last_cycle.dose_mj;
+    out->irradiance = last_cycle.irradiance;
+    /* Chamber conditions AS RECORDED at the end of that cycle, not as
+     * they are now - a ticket reprinted an hour later must not quietly
+     * report a different temperature than the cycle ran at. */
+    out->temp_c = last_cycle.temp_c;
+    out->hum_pct = last_cycle.hum_pct;
+  } else {
+    out->result = "AUCUN CYCLE";
+    out->reason = "Aucun cycle execute";
+    out->start = out->end;
+    out->irradiance = uvc_irradiance_now();
+    sbx_hal_read_env(&out->temp_c, &out->hum_pct);
+  }
 
   uint8_t lamps_active = 0;
   if (lamp_remaining_h(persist.lamp1_seconds) > 0)
     lamps_active++;
   if (lamp_remaining_h(persist.lamp2_seconds) > 0)
     lamps_active++;
+  out->lamps_active = lamps_active;
 
-  float dose_mj = uvc_dose_from_eff(cycle_eff_s);
-  float irr_now = uvc_irradiance_now();
-  uint32_t dur_min = cycle_total_s / 60u;
-  uint32_t dur_sec = cycle_total_s % 60u;
-
-  /* Per-organism log kill, enabled targets only */
-  char kills[400];
-  kills[0] = '\0';
-  for (int o = 0; o < SBX_ORG_COUNT; o++) {
-    if (!organisms[o].enabled)
-      continue;
-    float lr = log_reduction(dose_mj, organisms[o].d10_x10);
-    char line[72];
-    snprintf(line, sizeof(line), "  %-16s D10=%4.1f  %.2f log\r\n",
-             organisms[o].name, (double)organisms[o].d10_x10 / 10.0,
-             (double)lr);
-    strncat(kills, line, sizeof(kills) - strlen(kills) - 1);
-  }
-
-  snprintf(buf, len,
-           "=== SteriBox UV Sterilizer ===\r\n"
-           "Date     : %02u/%02u/%04u  %02u:%02u\r\n"
-           "%s"
-           "------------------------------\r\n"
-           "CYCLE\r\n"
-           "  Prechauffage : %u s (lampes ON)\r\n"
-           "  Duree cycle  : %u min %02u s\r\n"
-           "  Lampes       : %u/2\r\n"
-           "------------------------------\r\n"
-           "DOSE UV-C (point le plus defavorable)\r\n"
-           "  Irradiance   : %.2f mW/cm2\r\n"
-           "  Expo. equiv. : %.0f s pleine puissance\r\n"
-           "  Dose recue   : %.1f mJ/cm2\r\n"
-           "------------------------------\r\n"
-           "REDUCTION MICROBIENNE (log10)\r\n"
-           "%s"
-           "------------------------------\r\n"
-           "Temperature  : %.1f C\r\n"
-           "Humidite     : %.0f %%\r\n"
-           "Lampe L1 rest: %u h\r\n"
-           "Lampe L2 rest: %u h\r\n"
-           "Tps total app: %u h\r\n"
-           "Cycles OK    : %u\r\n"
-           "Cycles abort.: %u\r\n"
-           "------------------------------\r\n"
-           "Modele: D10 surface seche @254nm, biphasique.\r\n"
-           "Valeurs estimees - a confirmer par indicateur\r\n"
-           "biologique et dosimetrie.\r\n"
-           "==============================\r\n",
-           dt.day, dt.month, dt.year, dt.hour, dt.minute, period ? period : "",
-           (unsigned)SBX_WARMUP_S, dur_min, dur_sec, (unsigned)lamps_active,
-           (double)irr_now, (double)cycle_eff_s, (double)dose_mj, kills,
-           (double)t, (double)h,
-           (unsigned)lamp_remaining_h(persist.lamp1_seconds),
-           (unsigned)lamp_remaining_h(persist.lamp2_seconds),
-           (unsigned)(persist.total_seconds / 3600u),
-           (unsigned)persist.cycles_done, (unsigned)persist.cycles_aborted);
+  /* Device counters are always the live ones: the "ETAT MACHINE" block
+   * describes the machine at the moment the report is produced. */
+  out->lamp1_rem_h = lamp_remaining_h(persist.lamp1_seconds);
+  out->lamp2_rem_h = lamp_remaining_h(persist.lamp2_seconds);
+  out->total_h = persist.total_seconds / 3600u;
+  out->cycles_done = persist.cycles_done;
+  out->cycles_aborted = persist.cycles_aborted;
 }
 
-static void print_btn_cb(lv_event_t *e) {
-  if (lv_event_get_code(e) != LV_EVENT_CLICKED)
-    return;
-  char report[1024];
-  build_report(report, sizeof(report), NULL);
-  sbx_hal_buzzer(sbx_hal_usb_print(report) ? SBX_BEEP_OK : SBX_BEEP_WARN);
+/** Render the printer ticket for the recorded cycle. */
+static void build_ticket(char *buf, int len, const char *period) {
+  sbx_report_t r;
+  build_report_data(&r, period);
+  sbx_report_text(&r, buf, len);
+}
+
+/* ---- Detailed SD logging, one call per cycle end -------------------
+ * Three artefacts per cycle, completed or cancelled, all under /steribox:
+ *   syslog.csv           one event row, as before
+ *   cycles.csv           one full machine-readable row (the ledger)
+ *   ticket_NNNNN.txt     the exact ticket text, so it can be reprinted or
+ *                        recovered long after the fact
+ * -------------------------------------------------------------------*/
+static void cycle_log_to_sd(void) {
+  sbx_report_t r;
+  build_report_data(&r, NULL);
+
+  /* 1. event row */
+  {
+    char detail[240];
+    char d1[24];
+    snprintf(detail, sizeof(detail),
+             "cycle=%u result=%s planned=%s run=%us warm=%us lamp_on=%us"
+             " L1on=%us L2on=%us doors=%u dose=%.1fmJ/cm2 E=%.2fmW/cm2"
+             " eff=%.0fs lamps=%u/2 T=%.1fC RH=%.0f%%",
+             (unsigned)r.seq, r.result,
+             sbx_report_dur(d1, sizeof(d1), r.planned_s),
+             (unsigned)r.elapsed_s, (unsigned)r.warmup_s,
+             (unsigned)r.lamp_on_s, (unsigned)r.lamp1_on_s,
+             (unsigned)r.lamp2_on_s, (unsigned)r.door_events,
+             (double)r.dose_mj, (double)r.irradiance, (double)r.eff_s,
+             (unsigned)r.lamps_active, (double)r.temp_c, (double)r.hum_pct);
+    sbx_hal_log_event(r.completed ? "CYCLE_DONE" : "CYCLE_CANCELLED", detail);
+  }
+
+  /* 2. ledger row */
+  {
+    static char row[512];
+    sbx_report_csv(&r, row, sizeof(row));
+    sbx_hal_log_append("cycles.csv", sbx_report_csv_header(), row);
+  }
+
+  /* 3. reprintable ticket */
+  {
+    static char ticket[1600];
+    char fname[40];
+    sbx_report_text(&r, ticket, sizeof(ticket));
+    snprintf(fname, sizeof(fname), "ticket_%05u.txt", (unsigned)r.seq);
+    sbx_hal_log_snapshot(fname, ticket);
+  }
 }
 
 /* Public guarded callbacks registered in ui_screeninfo.c --------------
@@ -989,16 +1131,16 @@ static void print_btn_cb(lv_event_t *e) {
 void sbx_info_export_cb(lv_event_t *e) {
   if (lv_event_get_code(e) != LV_EVENT_CLICKED)
     return;
-  char report[1024];
-  build_report(report, sizeof(report), NULL);
+  static char report[1600];
+  build_ticket(report, sizeof(report), NULL);
   sbx_try_export(ui_screeninfo, "steribox_log.txt", report);
 }
 
 void sbx_info_print_cb(lv_event_t *e) {
   if (lv_event_get_code(e) != LV_EVENT_CLICKED)
     return;
-  char report[1024];
-  build_report(report, sizeof(report), NULL);
+  static char report[1600];
+  build_ticket(report, sizeof(report), NULL);
   sbx_try_print(ui_screeninfo, report);
 }
 
@@ -1014,8 +1156,8 @@ static lv_obj_t *end_logs;
 static void end_print_cb(lv_event_t *e) {
   if (lv_event_get_code(e) != LV_EVENT_CLICKED)
     return;
-  char report[1024];
-  build_report(report, sizeof(report), NULL);
+  static char report[1600];
+  build_ticket(report, sizeof(report), NULL);
   sbx_try_print(ui_screenhome, report);
 }
 
@@ -1131,38 +1273,53 @@ static void end_popup_create(void) {
   lv_obj_set_style_text_font(lc, &lv_font_montserrat_16, 0);
 }
 
-static void show_end_popup(bool aborted) {
+/* Show the result of the RECORDED cycle - completed or cancelled alike.
+ * A cancelled cycle gets the same panel, the same figures and the same
+ * "Print Ticket" button; only the wording and the colour differ. */
+static void show_end_popup(void) {
   if (!end_overlay)
     return;
-  char buf[160];
+  char buf[200], d1[24], d2[24], d3[24];
 
-  lv_snprintf(buf, sizeof(buf), LV_SYMBOL_OK "  Sterilisation %s",
-              aborted ? "Arretee" : "Terminee");
+  const bool have = last_cycle.valid;
+  const bool completed = have && last_cycle.reason == SBX_END_COMPLETED;
+
+  lv_snprintf(buf, sizeof(buf), "%s  Sterilisation %s",
+              completed ? LV_SYMBOL_OK : LV_SYMBOL_WARNING,
+              !have         ? "- aucun cycle"
+              : completed   ? "Terminee"
+                            : "ANNULEE");
   lv_label_set_text(end_title, buf);
-  lv_obj_set_style_text_color(end_title,
-                              lv_color_hex(aborted ? 0xFFB020 : 0x22DD88), 0);
+  lv_obj_set_style_text_color(
+      end_title, lv_color_hex(completed ? 0x22DD88 : 0xFFB020), 0);
 
-  sbx_datetime_t dt;
-  sbx_hal_get_datetime(&dt);
-  lv_snprintf(buf, sizeof(buf),
-              "Date  : %02u/%02u/%04u   %02u:%02u\n"
-              "Duree : %u min %02u s + %u s prechauf.   Cycle N: %u",
-              dt.day, dt.month, dt.year, dt.hour, dt.minute,
-              (unsigned)(cycle_total_s / 60u), (unsigned)(cycle_total_s % 60u),
-              (unsigned)SBX_WARMUP_S, (unsigned)persist.cycles_done);
-  lv_label_set_text(end_meta, buf);
+  if (have) {
+    lv_snprintf(buf, sizeof(buf),
+                "Cycle N %u   %02u/%02u/%04u  %02u:%02u   %s\n"
+                "Duree %s / %s prevu   Lampes allumees : %s",
+                (unsigned)last_cycle.seq, last_cycle.end.day,
+                last_cycle.end.month, last_cycle.end.year, last_cycle.end.hour,
+                last_cycle.end.minute, end_reason_str(last_cycle.reason),
+                sbx_report_dur(d1, sizeof(d1), last_cycle.elapsed_s),
+                sbx_report_dur(d2, sizeof(d2), last_cycle.planned_s),
+                sbx_report_dur(d3, sizeof(d3), last_cycle.lamp_on_s));
+    lv_label_set_text(end_meta, buf);
 
-  float dose_mj = uvc_dose_from_eff(cycle_eff_s);
-  float irr_now = uvc_irradiance_now();
-  lv_snprintf(buf, sizeof(buf),
-              "Dose : %d.%d mJ/cm2    Irradiance : %d.%02d mW/cm2 (pire point)",
-              (int)dose_mj, (int)(dose_mj * 10) % 10, (int)irr_now,
-              (int)(irr_now * 100) % 100);
-  lv_label_set_text(end_dose, buf);
+    lv_snprintf(
+        buf, sizeof(buf),
+        "Dose : %d.%d mJ/cm2    Irradiance : %d.%02d mW/cm2 (pire point)",
+        (int)last_cycle.dose_mj, (int)(last_cycle.dose_mj * 10) % 10,
+        (int)last_cycle.irradiance, (int)(last_cycle.irradiance * 100) % 100);
+    lv_label_set_text(end_dose, buf);
+  } else {
+    lv_label_set_text(end_meta, "Aucun cycle execute depuis le demarrage.");
+    lv_label_set_text(end_dose, "");
+  }
 
   /* Log10 reduction for each ENABLED target organism */
   char logs[400];
   logs[0] = '\0';
+  float dose_mj = have ? last_cycle.dose_mj : 0.0f;
   for (int o = 0; o < SBX_ORG_COUNT; o++) {
     if (!organisms[o].enabled)
       continue;
@@ -1185,7 +1342,7 @@ static void info_print_cb(lv_event_t *e) {
     return;
   _ui_screen_change(&ui_screenhome, LV_SCR_LOAD_ANIM_NONE, 0, 0,
                     &ui_screenhome_screen_init);
-  show_end_popup(state != SBX_STATE_DONE);
+  show_end_popup();
 }
 
 /*==================================================================
@@ -1220,7 +1377,7 @@ static void org_toggle_cb(lv_event_t *e) {
 
   /* If the result popup is open, refresh its organism list too */
   if (end_overlay && !lv_obj_has_flag(end_overlay, LV_OBJ_FLAG_HIDDEN))
-    show_end_popup(state != SBX_STATE_DONE);
+    show_end_popup();
 }
 
 static void org_close_cb(lv_event_t *e) {
@@ -1395,22 +1552,44 @@ static void exp_confirm_cb(lv_event_t *e) {
   lv_obj_set_style_text_color(exp_from_lbl, lv_color_hex(0xDBE6FF), 0);
   lv_obj_set_style_text_color(exp_to_lbl, lv_color_hex(0xDBE6FF), 0);
 
-  char period[80];
-  snprintf(period, sizeof(period),
-           "Period           : %02u/%02u/%04u - %02u/%02u/%04u\r\n", fd, fm, fy,
-           td, tm, ty);
-
-  char report[1024];
-  build_report(report, sizeof(report), period);
+  static char period[64];
+  snprintf(period, sizeof(period), "%02u/%02u/%04u - %02u/%02u/%04u", fd, fm,
+           fy, td, tm, ty);
 
   char fname[64];
-  snprintf(fname, sizeof(fname), "steribox_%04u%02u%02u-%04u%02u%02u.txt", fy,
+  snprintf(fname, sizeof(fname), "steribox_%04u%02u%02u-%04u%02u%02u.pdf", fy,
            fm, fd, ty, tm, td);
 
-  bool ok = sbx_hal_usb_export(fname, report);
+  /* The export target is a USB flash drive on the master's OTG port. The
+   * SD card is the on-board black box, not the customer deliverable, so
+   * it is only used as a fallback when no drive is plugged in - and the
+   * operator is told which one was written. */
+  sbx_report_t r;
+  build_report_data(&r, period);
+
+  bool usb = sbx_hal_usb_drive_present();
+  sbx_dest_t dest = usb ? SBX_DEST_USB : SBX_DEST_SD;
+
+  if (!usb && !sbx_hal_sd_present()) {
+    sbx_popup_error(ui_screeninfo,
+                    "No USB drive and no SD card.\n"
+                    "Insert a USB flash drive to export.");
+    sbx_hal_buzzer(SBX_BEEP_WARN);
+    return;
+  }
+
+  bool ok = sbx_report_pdf(&r, dest, fname);
   sbx_hal_buzzer(ok ? SBX_BEEP_OK : SBX_BEEP_WARN);
-  if (ok)
-    lv_obj_add_flag(exp_overlay, LV_OBJ_FLAG_HIDDEN);
+
+  if (!ok) {
+    sbx_popup_error(ui_screeninfo, usb ? "Export failed.\nCheck the USB drive."
+                                       : "Export failed.\nCheck the SD card.");
+    return;
+  }
+  if (!usb)
+    sbx_popup_error(ui_screeninfo, "No USB drive detected.\n"
+                                   "PDF saved to the SD card instead.");
+  lv_obj_add_flag(exp_overlay, LV_OBJ_FLAG_HIDDEN);
 }
 
 /*Row: caption label + clickable date button, returns the button*/
@@ -1900,23 +2079,6 @@ void steribox_app_init(void) {
   lv_obj_add_event_cb(ui_BTN_Reset1, info_print_cb, LV_EVENT_ALL,
                       NULL); /*PRINT -> Home popup*/
 
-<<<<<<< HEAD
-    /*--- Config screen ---*/
-    lv_obj_add_event_cb(ui_Button2,      pwd_post_cb,           LV_EVENT_ALL, NULL);
-    lv_obj_add_flag(ui_lampe_1, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_flag(ui_lampe_2, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(ui_lampe_1,      lamp1_reset_cb,        LV_EVENT_ALL, NULL);
-    lv_obj_add_event_cb(ui_lampe_2,      lamp2_reset_cb,        LV_EVENT_ALL, NULL);
-    lv_obj_add_event_cb(ui_Calendar2,    calendar_cb,           LV_EVENT_ALL, NULL);
-    lv_obj_add_event_cb(ui_screenconfig, config_screen_loaded_cb, LV_EVENT_ALL, NULL);
-    lv_obj_add_event_cb(ui_confirm_yes,  confirm_yes_cb,        LV_EVENT_ALL, NULL);
-    lv_obj_add_event_cb(ui_confirm_no,   confirm_no_cb,         LV_EVENT_ALL, NULL);
-    if(ui_confirm_ta) lv_obj_add_event_cb(ui_confirm_ta, confirm_yes_cb, LV_EVENT_READY, NULL);
-    lv_obj_add_event_cb(ui_layer2,       calendar_overlay_cb,   LV_EVENT_ALL, NULL);
-    lv_obj_add_flag(ui_layer2, LV_OBJ_FLAG_CLICKABLE);
-    /* Apply Changes + Synchronize buttons */
-    if(ui_BTN_Apply) lv_obj_add_event_cb(ui_BTN_Apply, save_config_cb, LV_EVENT_ALL, NULL);
-=======
   /*--- Config screen ---*/
   lv_obj_add_event_cb(ui_Button2, pwd_post_cb, LV_EVENT_ALL, NULL);
   lv_obj_add_flag(ui_lampe_1, LV_OBJ_FLAG_CLICKABLE);
@@ -1928,17 +2090,18 @@ void steribox_app_init(void) {
                       NULL);
   lv_obj_add_event_cb(ui_confirm_yes, confirm_yes_cb, LV_EVENT_ALL, NULL);
   lv_obj_add_event_cb(ui_confirm_no, confirm_no_cb, LV_EVENT_ALL, NULL);
+  /* Keypad "confirm" fires LV_EVENT_READY on the textarea, not CLICKED */
+  if (ui_confirm_ta)
+    lv_obj_add_event_cb(ui_confirm_ta, confirm_yes_cb, LV_EVENT_READY, NULL);
   lv_obj_add_event_cb(ui_layer2, calendar_overlay_cb, LV_EVENT_ALL, NULL);
   lv_obj_add_flag(ui_layer2, LV_OBJ_FLAG_CLICKABLE);
   /* Apply Changes + Synchronize buttons */
   if (ui_BTN_Apply)
     lv_obj_add_event_cb(ui_BTN_Apply, save_config_cb, LV_EVENT_ALL, NULL);
->>>>>>> dfeea45e2bc20f827e0b9e9dd96edf40f4175a84
 
   /*--- Global periodic refresh ---*/
   refresh_timer = lv_timer_create(refresh_cb, SBX_UI_REFRESH_MS, NULL);
   (void)refresh_timer;
-  (void)print_btn_cb; /* kept for direct-print wiring if needed */
 
   info_screen_refresh();
   usb_icons_refresh();

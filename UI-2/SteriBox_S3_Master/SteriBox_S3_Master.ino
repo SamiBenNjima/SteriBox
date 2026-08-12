@@ -58,10 +58,30 @@
 #define BUZZER_CHANNEL   0
 #define BUZZER_FREQ_HZ   2700
 
-/* ---- USB-OTG host switch ---- */
+/* ---- USB-OTG host switch (printer, CDC) ---- */
 /* Set to 1 if using USB Host (requires ESP32 core 3.x with TinyUSB mode enabled,
  * or Adafruit_TinyUSB library). Set to 0 if compiled under core 2.x.        */
 #define SBX_USB_OTG_ENABLED  0
+
+/* ---- USB-OTG mass storage switch (flash drive, PDF export) ----
+ * Mounts a FAT-formatted USB flash drive on the OTG port at /usb so the
+ * slave can stream exported PDFs onto it.
+ *
+ * Requires the ESP-IDF USB MSC host component, which is NOT part of the
+ * Arduino core: build with PlatformIO/ESP-IDF and add to idf_component.yml
+ *
+ *     dependencies:
+ *       espressif/usb_host_msc: "^1.1.0"
+ *
+ * While this is 0 the master simply never raises SBX_FLAG_USB_DRIVE, the
+ * slave sees "no USB drive" and writes the PDF to its SD card instead.
+ * Everything else in the export path is live either way.              */
+#ifndef SBX_USB_MSC_ENABLED
+#define SBX_USB_MSC_ENABLED  0
+#endif
+
+/* Mount point of the USB flash drive, and where exported files land. */
+#define SBX_USB_MOUNT  "/usb"
 
 /* ------------------------------------------------------------------ */
 #include <Arduino.h>
@@ -81,6 +101,14 @@ static bool s_printer_online = false;
 static bool s_printer_online = false;
 #endif
 
+#if SBX_USB_MSC_ENABLED
+#include <stdio.h>
+#include "usb/usb_host.h"
+#include "usb/msc_host.h"
+#include "usb/msc_host_vfs.h"
+#endif
+static bool s_usb_drive_online = false;
+
 DHT dht(PIN_DHT, DHT22);
 
 static bool     relay_state[2] = { false, false };
@@ -96,6 +124,17 @@ static uint8_t  s_system_state = 0;   /* 0=IDLE, 1=WARMUP, 2=RUNNING, 3=PAUSED, 
 /* Print buffer — accumulates chunks from SBX_CMD_PRINT packets */
 static char     s_print_buf[2048];
 static uint16_t s_print_pos = 0;
+
+/* File transfer to the USB drive — streamed straight to disk, so a
+ * multi-page PDF never has to fit in RAM on this board. */
+static char     s_file_name[64];
+static uint8_t  s_file_name_pos = 0;
+static bool     s_file_active   = false;   /* a file is open for writing */
+static bool     s_file_error    = false;
+static uint32_t s_file_bytes    = 0;
+#if SBX_USB_MSC_ENABLED
+static FILE *   s_file_fp       = NULL;
+#endif
 
 /* ================================================================
  * RGB NeoPixel Status LED (ESP32-S3 onboard LED_PIN GPIO 48)
@@ -218,6 +257,7 @@ void send_telemetry(void)
 #if SBX_USB_OTG_ENABLED
     if (s_printer_online)              flags |= SBX_FLAG_PRINTER_READY;
 #endif
+    if (s_usb_drive_online)            flags |= SBX_FLAG_USB_DRIVE;
     p.data[0] = flags;
 
     int16_t traw = (int16_t)(last_temp * 10.0f);
@@ -284,6 +324,89 @@ void apply_buzzer(uint8_t pattern)
 }
 
 /* ================================================================
+ * File transfer to the USB flash drive
+ *
+ * Protocol (see sbx_uart_protocol.h):
+ *   FILE_OPEN  data0 = 1..3 name chars in data1..3, data0 = 0 commits
+ *   FILE_DATA  data0 = 1..3 payload bytes in data1..3  (binary safe)
+ *   FILE_CLOSE data0 = 0 commit, 1 abort
+ * The master answers a FILE_CLOSE with SBX_MSG_FILE_ACK so the slave can
+ * tell the operator whether the document really landed on the drive.
+ * ================================================================ */
+static void file_send_ack(bool ok)
+{
+    sbx_packet_t ack = {0};
+    ack.type    = SBX_MSG_FILE_ACK;
+    ack.data[0] = ok ? 1 : 0;
+    send_packet(&ack);
+}
+
+static void file_open_commit(void)
+{
+    s_file_name[s_file_name_pos] = '\0';
+    s_file_name_pos = 0;
+    s_file_bytes    = 0;
+    s_file_error    = false;
+
+    if (s_file_name[0] == '\0') { s_file_error = true; return; }
+
+#if SBX_USB_MSC_ENABLED
+    if (!s_usb_drive_online) { s_file_error = true; return; }
+    char path[96];
+    snprintf(path, sizeof(path), "%s/%s", SBX_USB_MOUNT, s_file_name);
+    s_file_fp = fopen(path, "wb");
+    if (!s_file_fp) {
+        Serial.printf("  [USB] cannot create %s\n", path);
+        s_file_error = true;
+        return;
+    }
+    s_file_active = true;
+    Serial.printf("  [USB] writing %s\n", path);
+#else
+    /* No MSC driver in this build: consume the stream and report failure
+     * at close, so the slave falls back to its SD card. */
+    s_file_error  = true;
+    s_file_active = true;
+    Serial.printf("  [USB] %s discarded (SBX_USB_MSC_ENABLED = 0)\n",
+                  s_file_name);
+#endif
+}
+
+static void file_write_chunk(const uint8_t *data, uint8_t n)
+{
+    if (!s_file_active || n == 0 || n > 3) return;
+    s_file_bytes += n;            /* counted even on error, for the log */
+    if (s_file_error) return;
+#if SBX_USB_MSC_ENABLED
+    if (s_file_fp && fwrite(data, 1, n, s_file_fp) != n) s_file_error = true;
+#else
+    (void)data;
+#endif
+}
+
+static void file_close(bool abort_it)
+{
+    bool ok = s_file_active && !s_file_error && !abort_it;
+#if SBX_USB_MSC_ENABLED
+    if (s_file_fp) {
+        if (fclose(s_file_fp) != 0) ok = false;
+        s_file_fp = NULL;
+        if (abort_it || !ok) {
+            char path[96];
+            snprintf(path, sizeof(path), "%s/%s", SBX_USB_MOUNT, s_file_name);
+            remove(path);          /* never leave a truncated report behind */
+        }
+    }
+#endif
+    Serial.printf("  [USB] %s: %u bytes -> %s\n", s_file_name,
+                  (unsigned)s_file_bytes, ok ? "OK" : "FAILED");
+    s_file_active   = false;
+    s_file_error    = false;
+    s_file_name_pos = 0;
+    file_send_ack(ok);
+}
+
+/* ================================================================
  * Packet handler (commands from the slave CrowPanel)
  * ================================================================ */
 void handle_packet(const sbx_packet_t *p)
@@ -293,7 +416,11 @@ void handle_packet(const sbx_packet_t *p)
         Serial.println("[RX] checksum FAIL");
         return;
     }
-    Serial.printf("[RX] type=0x%02X (checksum OK)\n", p->type);
+    /* Streaming commands arrive thousands of packets at a time — tracing
+     * each one would flood the console and throttle the transfer. */
+    bool bulk = (p->type == SBX_CMD_FILE_DATA) || (p->type == SBX_CMD_PRINT) ||
+                (p->type == SBX_CMD_FILE_OPEN);
+    if (!bulk) Serial.printf("[RX] type=0x%02X (checksum OK)\n", p->type);
 
     switch (p->type) {
         case SBX_CMD_SET_RELAY: {
@@ -351,6 +478,26 @@ void handle_packet(const sbx_packet_t *p)
             }
             break;
         }
+        case SBX_CMD_FILE_OPEN: {
+            uint8_t n = p->data[0];
+            if (n == 0) {                       /* name complete -> open */
+                file_open_commit();
+            } else {
+                for (uint8_t i = 0; i < n && i < 3; i++) {
+                    if (s_file_name_pos < sizeof(s_file_name) - 1)
+                        s_file_name[s_file_name_pos++] = (char)p->data[1 + i];
+                }
+            }
+            break;
+        }
+        case SBX_CMD_FILE_DATA:
+            file_write_chunk(&p->data[1], p->data[0]);
+            break;
+
+        case SBX_CMD_FILE_CLOSE:
+            file_close(p->data[0] != 0);
+            break;
+
         default:
             Serial.printf("  [UNKNOWN] type=0x%02X\n", p->type);
             break;
@@ -437,6 +584,101 @@ static void usb_host_task(void)
 #endif
 
 /* ================================================================
+ * USB mass storage (flash drive) — ESP-IDF usb_host_msc component
+ *
+ * Mounts the first FAT volume found at SBX_USB_MOUNT and raises
+ * s_usb_drive_online, which the slave sees as SBX_FLAG_USB_DRIVE and
+ * uses to route PDF exports to the drive instead of the SD card.
+ * ================================================================ */
+#if SBX_USB_MSC_ENABLED
+static msc_host_device_handle_t s_msc_dev  = NULL;
+static msc_host_vfs_handle_t    s_msc_vfs  = NULL;
+static uint8_t                  s_msc_addr = 0;
+static volatile bool            s_msc_connect_pending    = false;
+static volatile bool            s_msc_disconnect_pending = false;
+
+static void msc_event_cb(const msc_host_event_t *event, void *arg)
+{
+    (void)arg;
+    if (event->event == MSC_DEVICE_CONNECTED) {
+        s_msc_addr = event->device.address;
+        s_msc_connect_pending = true;
+    } else if (event->event == MSC_DEVICE_DISCONNECTED) {
+        s_msc_disconnect_pending = true;
+    }
+}
+
+static void usb_host_lib_task(void *arg)
+{
+    (void)arg;
+    for (;;) {
+        uint32_t flags = 0;
+        usb_host_lib_handle_events(portMAX_DELAY, &flags);
+        if (flags & USB_HOST_LIB_EVENT_FLAGS_NO_CLIENTS)
+            usb_host_device_free_all();
+    }
+}
+
+static void msc_init(void)
+{
+    /* Field-by-field assignment rather than designated initializers: the
+     * member order of these IDF structs has changed between releases. */
+    usb_host_config_t host_cfg = {};
+    host_cfg.intr_flags = ESP_INTR_FLAG_LEVEL1;
+    if (usb_host_install(&host_cfg) != ESP_OK) {
+        Serial.println("[USB-MSC] usb_host_install failed");
+        return;
+    }
+    xTaskCreatePinnedToCore(usb_host_lib_task, "usb_lib", 4096, NULL, 2, NULL, 0);
+
+    msc_host_driver_config_t drv_cfg = {};
+    drv_cfg.create_backround_task = true;   /* [sic] - IDF spells it this way */
+    drv_cfg.task_priority         = 5;
+    drv_cfg.stack_size            = 4096;
+    drv_cfg.callback              = msc_event_cb;
+    drv_cfg.callback_arg          = NULL;
+    if (msc_host_install(&drv_cfg) != ESP_OK) {
+        Serial.println("[USB-MSC] msc_host_install failed");
+        return;
+    }
+    Serial.println("[USB-MSC] host ready — insert a FAT-formatted drive");
+}
+
+static void msc_task(void)
+{
+    if (s_msc_connect_pending) {
+        s_msc_connect_pending = false;
+        if (msc_host_install_device(s_msc_addr, &s_msc_dev) != ESP_OK) {
+            Serial.println("[USB-MSC] device install failed");
+            return;
+        }
+        esp_vfs_fat_mount_config_t mnt = {};
+        mnt.format_if_mount_failed = false;   /* never reformat the operator's drive */
+        mnt.max_files              = 3;
+        mnt.allocation_unit_size   = 4096;
+        if (msc_host_vfs_register(s_msc_dev, SBX_USB_MOUNT, &mnt, &s_msc_vfs)
+            != ESP_OK) {
+            Serial.println("[USB-MSC] mount failed — is the drive FAT32?");
+            msc_host_uninstall_device(s_msc_dev);
+            s_msc_dev = NULL;
+            return;
+        }
+        s_usb_drive_online = true;
+        Serial.printf("[USB-MSC] drive mounted at %s\n", SBX_USB_MOUNT);
+    }
+
+    if (s_msc_disconnect_pending) {
+        s_msc_disconnect_pending = false;
+        s_usb_drive_online = false;
+        if (s_file_active) file_close(true);   /* drive yanked mid-transfer */
+        if (s_msc_vfs) { msc_host_vfs_unregister(s_msc_vfs); s_msc_vfs = NULL; }
+        if (s_msc_dev) { msc_host_uninstall_device(s_msc_dev); s_msc_dev = NULL; }
+        Serial.println("[USB-MSC] drive removed");
+    }
+}
+#endif /* SBX_USB_MSC_ENABLED */
+
+/* ================================================================
  * setup()
  * ================================================================ */
 void setup(void)
@@ -470,7 +712,10 @@ void setup(void)
     /* I2C + DS3231 RTC */
     rtc_init();
 
-    /* UART1 link to the CrowPanel slave */
+    /* UART1 link to the CrowPanel slave.
+     * A roomier RX FIFO keeps a streamed PDF from overrunning while the
+     * loop is busy with a blocking DHT22 read. */
+    Serial1.setRxBufferSize(2048);
     Serial1.begin(SBX_UART_BAUD, SERIAL_8N1, MASTER_RX, MASTER_TX);
     Serial.printf("[INIT] UART1 slave link: RX=%d TX=%d @ %u baud\n",
                   MASTER_RX, MASTER_TX, SBX_UART_BAUD);
@@ -490,9 +735,15 @@ void setup(void)
     Serial.printf("  I2C RTC SDA=%d SCL=%d\n",         RTC_SDA, RTC_SCL);
     Serial.println("  USB-OTG GPIO 19/20 (D-/D+) — reserved, do not connect");
 #if SBX_USB_OTG_ENABLED
-    Serial.println("  [USB-OTG] Host stub ENABLED");
+    Serial.println("  [USB-OTG] printer host stub ENABLED");
 #else
-    Serial.println("  [USB-OTG] stub DISABLED (enable SBX_USB_OTG_ENABLED when wired)");
+    Serial.println("  [USB-OTG] printer stub DISABLED (set SBX_USB_OTG_ENABLED when wired)");
+#endif
+#if SBX_USB_MSC_ENABLED
+    msc_init();
+#else
+    Serial.println("  [USB-MSC] flash-drive host DISABLED "
+                   "(set SBX_USB_MSC_ENABLED; PDF exports fall back to SD)");
 #endif
     Serial.println("[INIT] Waiting for slave (CrowPanel) link...\n");
 }
@@ -559,6 +810,9 @@ void loop(void)
 
 #if SBX_USB_OTG_ENABLED
     usb_host_task();
+#endif
+#if SBX_USB_MSC_ENABLED
+    msc_task();
 #endif
 
     /* Update onboard NeoPixel RGB status LED */

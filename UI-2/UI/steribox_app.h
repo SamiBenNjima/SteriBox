@@ -22,6 +22,15 @@ typedef enum {
     SBX_STATE_ABORTED_DOOR,
 } sbx_state_t;
 
+/** How a cycle ended. EVERY cycle gets one of these - a cycle that was
+ *  stopped or timed out on an open door is still a recorded cycle with a
+ *  full ledger row and a printable ticket, it simply did not complete. */
+typedef enum {
+    SBX_END_COMPLETED = 0,   /* ran to the selected duration              */
+    SBX_END_OPERATOR_STOP,   /* STOP pressed during preheat or run        */
+    SBX_END_DOOR_TIMEOUT,    /* door left open past the 10 s pause window */
+} sbx_end_reason_t;
+
 /** Attach events/timers to the generated UI. Call after ui_init(). */
 void steribox_app_init(void);
 

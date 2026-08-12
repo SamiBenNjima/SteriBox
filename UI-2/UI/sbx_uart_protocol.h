@@ -35,9 +35,22 @@ enum {
     SBX_CMD_PRINT       = 0x04,  /* data0..3=4 chars of text; zero-payload=end */
     SBX_CMD_SET_STATE   = 0x05,  /* data0=system state (sbx_state_t)     */
 
+    /* --- file transfer to a USB mass-storage drive on the OTG port ---
+     * A document is streamed as:
+     *   FILE_OPEN x N   name chars, then FILE_OPEN with data0=0 to commit
+     *   FILE_DATA x M   data0 = 1..3 payload bytes in data1..3
+     *   FILE_CLOSE      data0 = 0 to commit, 1 to abort and delete
+     * data0 doubles as the length so the transfer is binary-safe (a PDF
+     * may legitimately contain 0x00). 3 payload bytes per 8-byte packet
+     * is ~4.3 kB/s at 115200 baud - a one-page report lands in ~2 s. */
+    SBX_CMD_FILE_OPEN   = 0x06,  /* data0=n chars in data1..3, 0 = commit name */
+    SBX_CMD_FILE_DATA   = 0x07,  /* data0=n bytes (1..3) in data1..3           */
+    SBX_CMD_FILE_CLOSE  = 0x08,  /* data0: 0=commit, 1=abort                   */
+
     /* master -> slave (telemetry/replies) */
     SBX_MSG_TELEMETRY   = 0x10,  /* data0=flags, data1..2=temp*10 (i16 LE), data3=hum% */
     SBX_MSG_PONG        = 0x11,
+    SBX_MSG_FILE_ACK    = 0x12,  /* data0: 1=file written OK, 0=failed         */
 };
 
 /* telemetry flags bitfield (data[0]) */
@@ -46,6 +59,7 @@ enum {
 #define SBX_FLAG_RELAY2_ON      (1 << 2)
 #define SBX_FLAG_ENV_VALID      (1 << 3)  /* DHT22 read OK this cycle */
 #define SBX_FLAG_PRINTER_READY  (1 << 4)  /* USB-OTG printer detected */
+#define SBX_FLAG_USB_DRIVE      (1 << 5)  /* USB-OTG mass-storage drive mounted */
 
 typedef struct __attribute__((packed)) {
     uint8_t header;     /* SBX_HDR_MASTER or SBX_HDR_SLAVE */

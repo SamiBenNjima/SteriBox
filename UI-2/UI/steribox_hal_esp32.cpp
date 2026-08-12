@@ -396,6 +396,30 @@ bool sbx_hal_log_event(const char * tag, const char * detail)
     return true;
 }
 
+/* ---- sbx_hal_log_append -----------------------------------------
+ * Append one raw line to /steribox/<filename>, writing <header> as the
+ * first line the very first time the file is created. Used for the
+ * per-cycle ledger (cycles.csv) so the file is self-describing when it
+ * is opened in a spreadsheet.
+ *----------------------------------------------------------------*/
+bool sbx_hal_log_append(const char * filename, const char * header,
+                        const char * line)
+{
+    if(!sd_ok || !filename || !line) return false;
+
+    char path[80];
+    snprintf(path, sizeof(path), "/steribox/%s", filename);
+
+    bool fresh = !SD.exists(path);
+    File f = SD.open(path, FILE_APPEND);
+    if(!f) return false;
+    if(fresh && header && *header) { f.print(header); f.print("\n"); }
+    f.print(line);
+    f.print("\n");
+    f.close();
+    return true;
+}
+
 /* ---- sbx_hal_log_snapshot ---------------------------------------
  * Write/overwrite <filename> under /steribox/, then call log_event
  * so the snapshot is referenced in the main syslog.
@@ -427,6 +451,103 @@ bool sbx_hal_usb_export(const char * filename, const char * text)
 }
 
 /*==================================================================
+ * Streaming file writer
+ *
+ * SBX_DEST_SD  -> /steribox/<name> on the onboard card.
+ * SBX_DEST_USB -> tunnelled to the master, which writes it to the USB
+ *                 mass-storage drive on its OTG port.
+ * One document at a time; see steribox_hal.h.
+ *=================================================================*/
+static File      s_out_file;
+static sbx_dest_t s_out_dest    = SBX_DEST_SD;
+static bool      s_out_open     = false;
+static bool      s_out_failed   = false;
+static uint32_t  s_out_bytes    = 0;
+static char      s_out_name[64];
+
+bool sbx_hal_usb_drive_present(void)
+{
+#if SBX_MASTER_UART_ENABLED
+    return sbx_uart_get_usb_drive_present();
+#else
+    return false;
+#endif
+}
+
+bool sbx_hal_file_open(sbx_dest_t dest, const char * filename)
+{
+    if(!filename || !*filename) return false;
+    if(s_out_open) sbx_hal_file_close(false); /* never leave one dangling */
+
+    s_out_dest   = dest;
+    s_out_failed = false;
+    s_out_bytes  = 0;
+    snprintf(s_out_name, sizeof(s_out_name), "%s", filename);
+
+    if(dest == SBX_DEST_USB) {
+        if(!sbx_hal_usb_drive_present()) return false;
+        if(!sbx_uart_file_open(filename))  return false;
+        s_out_open = true;
+        return true;
+    }
+
+    if(!sd_ok) return false;
+    char path[96];
+    snprintf(path, sizeof(path), "/steribox/%s", filename);
+    SD.remove(path);                          /* truncate any previous run */
+    s_out_file = SD.open(path, FILE_WRITE);
+    if(!s_out_file) return false;
+    s_out_open = true;
+    return true;
+}
+
+bool sbx_hal_file_write(const void * data, uint32_t len)
+{
+    if(!s_out_open || s_out_failed) return false;
+    if(!data || len == 0) return true;
+
+    bool ok;
+    if(s_out_dest == SBX_DEST_USB) {
+        ok = sbx_uart_file_write(data, len);
+    } else {
+        ok = (s_out_file.write((const uint8_t *)data, len) == len);
+    }
+    if(ok) s_out_bytes += len;
+    else   s_out_failed = true;
+    return ok;
+}
+
+bool sbx_hal_file_close(bool commit)
+{
+    if(!s_out_open) return false;
+    s_out_open = false;
+
+    bool keep = commit && !s_out_failed;
+
+    bool ok;
+    if(s_out_dest == SBX_DEST_USB) {
+        /* Aborting makes the master delete the partial file instead of
+         * handing the operator a truncated report. */
+        ok = sbx_uart_file_close(keep);
+    } else {
+        s_out_file.close();
+        ok = keep;
+        if(!keep) {
+            char path[96];
+            snprintf(path, sizeof(path), "/steribox/%s", s_out_name);
+            SD.remove(path);
+        }
+    }
+
+    char detail[128];
+    snprintf(detail, sizeof(detail), "file=%s dest=%s bytes=%u result=%s",
+             s_out_name, (s_out_dest == SBX_DEST_USB) ? "usb" : "sd",
+             (unsigned)s_out_bytes, ok ? "ok" : "FAILED");
+    sbx_hal_log_event("EXPORT", detail);
+    return ok;
+}
+
+/*==================================================================
  * Printer via USB-OTG on the ESP32-S3 master (tunnelled over UART)
  *=================================================================*/
 bool sbx_hal_printer_present(void)
@@ -444,12 +565,9 @@ bool sbx_hal_usb_print(const char * text)
 {
     if (!sbx_hal_printer_present()) return false;
 
-    /* Send the text to the master via a dedicated UART command.
-     * The master will forward it to the TinyUSB CDC printer driver.
-     * We send it in 6-byte chunks (sbx_packet_t data[] = 4 bytes only,
-     * so we reuse the TELEMETRY mechanism: each packet carries 4 chars
-     * + type=SBX_CMD_PRINT, until a terminator packet is sent).       */
-    extern void sbx_uart_send_print_text(const char * text); /* steribox_uart.cpp */
+    /* Streamed to the master as SBX_CMD_PRINT packets (4 chars each,
+     * zero-payload packet terminates), which forwards the document to
+     * the USB CDC printer driver. See steribox_uart.h. */
     sbx_uart_send_print_text(text);
     return true;
 }

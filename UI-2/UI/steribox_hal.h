@@ -118,6 +118,43 @@ bool sbx_hal_log_snapshot(const char * filename, const char * text);
  *  Silent no-op when no SD card is present. */
 bool sbx_hal_log_event(const char * tag, const char * detail);
 
+/** Append one raw line to an arbitrary file under /steribox/, creating it
+ *  with `header` as its first line if it does not exist yet. Used for the
+ *  machine-readable per-cycle ledger (cycles.csv). Pass NULL for no header.
+ *  Silent no-op when no SD card is present. */
+bool sbx_hal_log_append(const char * filename, const char * header,
+                        const char * line);
+
+/*------------------------------------------------
+ * Streaming file writer (reports / PDF export)
+ *
+ * One file at a time - the UI is single-threaded and never interleaves
+ * exports. Writing a document is always open -> write* -> close, and
+ * close() is what reports the final success: on the USB destination the
+ * bytes are tunnelled to the master, so nothing is confirmed until the
+ * whole document has been acknowledged.
+ *-----------------------------------------------*/
+typedef enum {
+    SBX_DEST_SD  = 0,   /*onboard SD card slot (always present in the box)*/
+    SBX_DEST_USB = 1,   /*USB flash drive on the master's USB-OTG port    */
+} sbx_dest_t;
+
+/** True when a USB mass-storage drive is mounted on the master's OTG port. */
+bool sbx_hal_usb_drive_present(void);
+
+/** Open <filename> for writing on `dest`, truncating any existing file.
+ *  Files land in /steribox/ on SD and in the root folder on a USB drive. */
+bool sbx_hal_file_open(sbx_dest_t dest, const char * filename);
+
+/** Append `len` bytes to the file opened by sbx_hal_file_open(). */
+bool sbx_hal_file_write(const void * data, uint32_t len);
+
+/** Flush and close. Pass commit=false to discard the file instead - a
+ *  report that could not be composed must never be left behind in a
+ *  half-written state for an operator to pick up. Returns true only when
+ *  the complete document reached the medium. */
+bool sbx_hal_file_close(bool commit);
+
 /*------------------------------------------------
  * Printer via USB-OTG (ESP32-S3 master, GPIO 19/20)
  *-----------------------------------------------*/
